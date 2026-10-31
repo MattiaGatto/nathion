@@ -1,0 +1,27 @@
+# Override per lo sviluppo con hot-reload: monta il codice sorgente e
+# usa i dev server invece delle build di produzione.
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  backend:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+      - backend_data:/app/data
+
+  frontend:
+    build:
+      # Usa lo stage "build" (ha node_modules e il toolchain Vite),
+      # invece dell'immagine finale che contiene solo i file statici.
+      target: build
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    command: npm run dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
