@@ -22,7 +22,17 @@ export function useChatSocket(conversationId: string | null, model: string | nul
   const onDoneRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (!conversationId || !model) return;
+    // Azzera lo stato della risposta precedente: senza questo reset, se
+    // si cambia conversazione mentre una risposta e' ancora a meta'
+    // streaming (done: false), il fumetto incompleto resterebbe nello
+    // stato del hook e potrebbe ricomparire nella conversazione sbagliata.
+    setStreaming(null);
+    setError(null);
+
+    if (!conversationId || !model) {
+      setStatus("idle");
+      return;
+    }
 
     setStatus("connecting");
     const socket = new WebSocket(chatWebSocketUrl(conversationId, model));

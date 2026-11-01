@@ -42,6 +42,11 @@ async function handle<T>(response: Response): Promise<T> {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail ?? `Richiesta fallita (${response.status})`);
   }
+  // Una 204 No Content (es. DELETE) non ha corpo: chiamare .json() su una
+  // risposta vuota solleva "Unexpected end of JSON input".
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json() as Promise<T>;
 }
 
@@ -72,6 +77,11 @@ export const api = {
 
   getConversation: (id: string) =>
     fetch(`${API_BASE_URL}/api/chat/conversations/${id}`).then((r) => handle<ConversationDetail>(r)),
+
+  deleteConversation: (id: string) =>
+    fetch(`${API_BASE_URL}/api/chat/conversations/${id}`, { method: "DELETE" }).then((r) =>
+      handle<void>(r)
+    ),
 };
 
 export function chatWebSocketUrl(conversationId: string, model: string): string {

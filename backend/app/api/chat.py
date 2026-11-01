@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from sqlalchemy.orm import Session
 
 from app.db.models import Conversation, Message, MessageRole
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.llm.base import ChatMessage, LLMProviderError
 from app.llm.gateway import LLMGateway, get_gateway
 from app.schemas.chat import (
@@ -29,6 +29,28 @@ from app.schemas.chat import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+_TITLE_MAX_LENGTH = 60
+_DEFAULT_TITLE = "Nuova conversazione"
+
+
+def _derive_title(text: str) -> str:
+    """Titolo leggibile per lo storico conversazioni, ricavato dal primo
+    messaggio utente (altrimenti ogni voce della sidebar si chiamerebbe
+    'Nuova conversazione' e sarebbe impossibile distinguerle)."""
+    cleaned = " ".join(text.strip().split())
+    if len(cleaned) <= _TITLE_MAX_LENGTH:
+        return cleaned or _DEFAULT_TITLE
+    return cleaned[: _TITLE_MAX_LENGTH - 1].rstrip() + "…"
+
+
+def _touch_and_maybe_title(conversation: Conversation, first_user_text: str) -> None:
+    """Aggiorna updated_at (cosi' l'ordinamento dello storico riflette
+    l'ultima attivita', non solo le modifiche al titolo) e imposta il
+    titolo al primo messaggio, se non e' ancora stato personalizzato."""
+    conversation.touch()
+    if conversation.title == _DEFAULT_TITLE:
+        conversation.title = _derive_title(first_user_text)
 
 
 @router.post("/conversations", response_model=ConversationOut)
@@ -55,6 +77,15 @@ async def get_conversation(conversation_id: str, db: Session = Depends(get_db)) 
     return conversation
 
 
+@router.delete("/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(conversation_id: str, db: Session = Depends(get_db)) -> None:
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversazione non trovata")
+    db.delete(conversation)  # cascade="all, delete-orphan" elimina anche i messaggi
+    db.commit()
+
+
 @router.post("/conversations/{conversation_id}/messages", response_model=ConversationDetailOut)
 async def send_message(
     conversation_id: str,
@@ -72,6 +103,7 @@ async def send_message(
         conversation_id=conversation_id, role=MessageRole.user, content=body.content
     )
     db.add(user_message)
+    _touch_and_maybe_title(conversation, body.content)
     db.commit()
 
     history = [ChatMessage(role=m.role.value, content=m.content) for m in conversation.messages]
@@ -102,7 +134,12 @@ async def chat_websocket(
 ) -> None:
     await websocket.accept()
 
-    db: Session = next(get_db())
+    # Sessione dedicata a questa connessione, aperta e chiusa qui
+    # esplicitamente: `next(get_db())` avrebbe lasciato la generator
+    # function di `get_db` sospesa, con il suo `finally` (altro
+    # `db.close()`) eseguito solo alla garbage collection invece che in
+    # modo deterministico.
+    db: Session = SessionLocal()
     gateway = get_gateway()
 
     try:
@@ -119,6 +156,7 @@ async def chat_websocket(
                 conversation_id=conversation_id, role=MessageRole.user, content=user_text
             )
             db.add(user_message)
+            _touch_and_maybe_title(conversation, user_text)
             db.commit()
 
             history = [

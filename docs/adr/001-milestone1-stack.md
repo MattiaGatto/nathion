@@ -51,3 +51,43 @@ testuale, persistenza conversazioni (costituzione NATHION §13).
 - Aggiungere un nuovo provider LLM richiede una nuova classe in
   `app/llm/` più una riga in `LLMGateway._providers` — nessun altro
   file da toccare.
+
+## Addendum — revisione del 2026-11-01
+
+Prima del collaudo sulla macchina dell'utente, è stata fatta una
+revisione completa del codice (bug fix) e un redesign dell'interfaccia:
+
+**Bug corretti:**
+- `conversation.updated_at` non veniva mai aggiornato all'arrivo di un
+  messaggio (solo `onupdate` su modifica diretta della riga), quindi lo
+  storico ordinato per "ultima attività" era di fatto statico.
+  Aggiunto `Conversation.touch()`, chiamato a ogni messaggio.
+- Il titolo della conversazione restava sempre "Nuova conversazione":
+  aggiunta `_derive_title()` che lo imposta dal primo messaggio utente.
+- Il WebSocket apriva la sessione DB con `next(get_db())`, lasciando il
+  generatore sospeso (il suo `finally` sarebbe scattato solo al
+  garbage collection). Sostituito con `SessionLocal()` esplicito.
+- Nel client frontend, `handle<T>()` chiamava sempre `response.json()`,
+  che fallisce su una risposta 204 No Content — rilevante per il nuovo
+  endpoint di cancellazione conversazione.
+
+**Aggiunte:**
+- `DELETE /api/chat/conversations/{id}` (con conferma a due passaggi
+  nella UI).
+- Frontend ricostruito attorno a: sidebar con storico conversazioni
+  (cronologia, nuova conversazione, eliminazione), pannello
+  Impostazioni (selezione modello Ollama disponibile, persistita via
+  `/api/settings`), composer con textarea auto-espandibile e invio con
+  Invio/Shift+Invio, indicatore di digitazione durante lo streaming,
+  stato vuoto con suggerimenti. Palette scura "futuristica" coerente
+  con la tagline di progetto, animazioni leggere, tipografia
+  Space Grotesk/Inter.
+- Suite di test ampliata (12 test): copre titolo automatico,
+  ordinamento storico, invio messaggio end-to-end, cancellazione,
+  tramite un provider LLM finto (`StubProvider`) iniettato via
+  dependency override di FastAPI — nessuna dipendenza da un'istanza
+  Ollama reale durante i test.
+
+Vedi anche ADR-002 per i requisiti raccolti su agenti configurabili
+multi-utente e compatibilità mobile/Android Auto, pianificati per le
+milestone successive.

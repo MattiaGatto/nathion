@@ -48,6 +48,14 @@ class Conversation(Base):
         order_by="Message.created_at",
     )
 
+    def touch(self) -> None:
+        """Aggiorna updated_at esplicitamente. SQLAlchemy applica
+        `onupdate` solo quando la RIGA della conversazione cambia;\
+        aggiungere un Message figlio non la tocca, quindi senza questa
+        chiamata lo storico (ordinato per updated_at) non rifletterebbe
+        mai l'ultima attivita' reale di una conversazione."""
+        self.updated_at = _now()
+
 
 class Message(Base):
     __tablename__ = "messages"

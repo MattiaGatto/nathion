@@ -1,108 +1,138 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type ConversationDetail, type MessageOut } from "../api/client";
 import { useChatSocket } from "../hooks/useChatSocket";
+import { Composer } from "./Composer";
+import { EmptyState } from "./EmptyState";
 import { MessageBubble } from "./MessageBubble";
-import { ModelSelector } from "./ModelSelector";
 import { StatusIndicator } from "./StatusIndicator";
+import { TypingIndicator } from "./TypingIndicator";
 
-export function ChatWindow() {
+interface Props {
+  conversationId: string;
+  model: string | null;
+  onConversationUpdated: () => void;
+  onOpenSettings: () => void;
+}
+
+export function ChatWindow({
+  conversationId,
+  model,
+  onConversationUpdated,
+  onOpenSettings,
+}: Props) {
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
-  const [model, setModel] = useState<string | null>(null);
-  const [input, setInput] = useState("");
-  const [initError, setInitError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { status, streaming, error, sendMessage } = useChatSocket(
-    conversation?.id ?? null,
-    model
-  );
+  const { status, streaming, error, sendMessage } = useChatSocket(conversationId, model);
 
-  // Crea una conversazione all'avvio (Milestone 1: una sola conversazione
-  // attiva, lo storico multi-conversazione arriva in una milestone
-  // successiva dedicata alla UI).
   useEffect(() => {
+    setConversation(null);
+    setLoadError(null);
     api
-      .createConversation()
-      .then((c) => api.getConversation(c.id))
+      .getConversation(conversationId)
       .then(setConversation)
-      .catch((err) => setInitError(err.message));
-  }, []);
+      .catch((err) => setLoadError(err.message));
+  }, [conversationId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [conversation, streaming]);
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const text = input.trim();
-    if (!text || !conversation) return;
+  function handleSend(text: string) {
+    if (!conversation) return;
 
-    const userMessage: MessageOut = {
-      id: `local-${Date.now()}`,
+    const optimisticUser: MessageOut = {
+      id: `local-${crypto.randomUUID()}`,
       role: "user",
       content: text,
       model_used: null,
       created_at: new Date().toISOString(),
     };
-    setConversation((prev) => prev && { ...prev, messages: [...prev.messages, userMessage] });
-    setInput("");
+    setConversation((prev) => prev && { ...prev, messages: [...prev.messages, optimisticUser] });
 
     sendMessage(text, () => {
-      // A fine streaming, ri-sincronizza dal backend per avere l'id e il
-      // contenuto definitivo del messaggio assistente appena salvato.
-      if (conversation) {
-        api.getConversation(conversation.id).then(setConversation);
-      }
+      api
+        .getConversation(conversationId)
+        .then(setConversation)
+        .finally(onConversationUpdated);
     });
   }
 
-  if (initError) {
+  if (loadError) {
     return (
-      <div className="p-6 text-sm text-red-400">
-        Impossibile avviare la conversazione: {initError}
-        <br />
-        Verifica che il backend sia raggiungibile su <code>/health</code>.
+      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-red-400">
+        Impossibile aprire la conversazione: {loadError}
       </div>
     );
   }
 
+  const hasMessages = (conversation?.messages.length ?? 0) > 0;
+  const awaitingFirstChunk = streaming !== null && !streaming.done && streaming.content === "";
+
   return (
-    <div className="flex h-screen flex-col bg-nathion-bg">
-      <header className="flex items-center justify-between border-b border-white/5 px-6 py-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">NATHION</h1>
-          <p className="text-xs text-slate-500">Your Intelligence. Your System. Your Control.</p>
+    <div className="flex h-full flex-col">
+      <header className="flex items-center justify-between border-b border-nathion-border bg-nathion-bg/80 px-6 py-3 backdrop-blur">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-medium text-nathion-text">
+            {conversation?.title ?? "Nuova conversazione"}
+          </h1>
         </div>
-        <div className="flex items-center gap-4">
-          <ModelSelector selectedModel={model} onChange={setModel} />
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={onOpenSettings}
+            className="rounded-full border border-nathion-border bg-nathion-panel px-2.5 py-1 font-mono text-[11px] text-nathion-muted transition hover:border-nathion-accent-dim/40 hover:text-nathion-text"
+            title="Cambia modello nelle impostazioni"
+          >
+            {model ?? "nessun modello"}
+          </button>
           <StatusIndicator status={status} />
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
-        {conversation?.messages.map((m) => <MessageBubble key={m.id} message={m} />)}
-        {streaming && !streaming.done && (
-          <MessageBubble message={{ role: "assistant", content: streaming.content || "..." }} />
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        {!hasMessages && !streaming ? (
+          <EmptyState onPick={handleSend} />
+        ) : (
+          <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
+            {conversation?.messages.map((m) => <MessageBubble key={m.id} message={m} />)}
+
+            {streaming && !streaming.done && (
+              <div className="flex items-end gap-2.5">
+                <div className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-nathion-panel ring-1 ring-nathion-border">
+                  <span className="h-2 w-2 rounded-full bg-nathion-accent" />
+                </div>
+                <div className="rounded-2xl rounded-bl-sm border border-nathion-border bg-nathion-panel px-4 py-2.5 text-[0.9rem] leading-relaxed text-nathion-text">
+                  {awaitingFirstChunk ? (
+                    <TypingIndicator />
+                  ) : (
+                    <span className="whitespace-pre-wrap">{streaming.content}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {error}
+              </p>
+            )}
+          </div>
         )}
-        {error && <p className="text-xs text-red-400">{error}</p>}
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-white/5 px-6 py-4">
-        <input
-          className="flex-1 rounded-lg border border-white/10 bg-nathion-panel px-4 py-2 text-sm text-slate-100 outline-none focus:border-nathion-accent"
-          placeholder={model ? "Scrivi un messaggio..." : "Seleziona un modello per iniziare..."}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={!model || !conversation}
-        />
-        <button
-          type="submit"
-          className="rounded-lg bg-nathion-accent px-4 py-2 text-sm font-medium text-nathion-bg disabled:opacity-40"
-          disabled={!model || !conversation || !input.trim()}
-        >
-          Invia
-        </button>
-      </form>
+      <div className="border-t border-nathion-border px-6 py-4">
+        <div className="mx-auto max-w-3xl">
+          <Composer
+            disabled={!model}
+            placeholder={model ? "Scrivi un messaggio…" : "Seleziona un modello dalle impostazioni…"}
+            onSend={handleSend}
+          />
+          <p className="mt-2 text-center text-[11px] text-nathion-muted">
+            NATHION puo&apos; commettere errori. Verifica le informazioni importanti.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

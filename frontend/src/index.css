@@ -1,3 +1,41 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  body {
+    background-color: #07080c;
+  }
+
+  /* Scrollbar sottile e coerente col tema scuro, invece del default
+     del browser che stona con un'interfaccia "futuristica". */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: #232938;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #2d3448;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #232938 transparent;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

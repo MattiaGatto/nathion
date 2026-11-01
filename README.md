@@ -30,10 +30,13 @@ docker compose up --build
 - Backend: http://localhost:8000 (healthcheck su `/health`)
 - Frontend: http://localhost:4173
 
-Apri il frontend: all'avvio crea automaticamente una conversazione,
-interroga Ollama per i modelli disponibili e li mostra nel menu in
-alto a destra. Se il menu dice "Nessun modello trovato", esegui
-`ollama pull <nome-modello>` e ricarica la pagina.
+Apri il frontend: alla prima apertura crea automaticamente una
+conversazione e seleziona in silenzio il primo modello Ollama
+disponibile. Lo storico delle conversazioni è nella barra laterale a
+sinistra; il modello attivo (e il provider) si cambiano dal pannello
+**Impostazioni** in basso a sinistra — la scelta viene salvata e
+sopravvive a un riavvio. Se non vedi modelli disponibili, esegui
+`ollama pull <nome-modello>` e riapri il pannello impostazioni.
 
 ## Sviluppo con hot-reload
 
@@ -88,10 +91,13 @@ pip install -e ".[dev]"
 pytest
 ```
 
-8 test coprono: healthcheck, creazione/recupero conversazioni (criterio
-di accettazione "persistenza"), routing del gateway verso un provider
-(con un provider finto, per non dipendere da un'istanza Ollama in
-esecuzione durante i test).
+12 test coprono: healthcheck, creazione/recupero/eliminazione
+conversazioni (criterio di accettazione "persistenza"), titolo
+auto-generato dal primo messaggio, ordinamento dello storico per
+ultima attività, invio messaggio end-to-end via REST, e il routing del
+gateway verso un provider — il tutto con un provider LLM finto
+(`StubProvider` in `tests/conftest.py`), per non dipendere da un'istanza
+Ollama in esecuzione durante i test.
 
 ## Struttura del repo
 
@@ -104,7 +110,7 @@ backend/app/
   db/              # modelli SQLAlchemy + sessione
   schemas/         # Pydantic request/response
 frontend/src/
-  components/      # ChatWindow, MessageBubble, ModelSelector, StatusIndicator
+  components/      # Sidebar, ChatWindow, SettingsPanel, Composer, MessageBubble, ...
   hooks/           # useChatSocket (WebSocket streaming)
   api/             # client HTTP
 docs/adr/          # Architecture Decision Records
@@ -120,9 +126,10 @@ docs/adr/          # Architecture Decision Records
 - [x] Una conversazione e i suoi messaggi sopravvivono a un riavvio
       (SQLite persistito su volume Docker)
 - [x] Messaggio inviato via API → risposta salvata in DB
-- [x] Chat testuale funzionante da browser
-- [x] `pytest` verde (8/8)
-- [x] ADR-001 documentato
+- [x] Chat testuale funzionante da browser, con storico conversazioni
+      e impostazioni (modello) persistite
+- [x] `pytest` verde (12/12)
+- [x] ADR-001 e ADR-002 documentati
 
 ## Prossimo passo
 
