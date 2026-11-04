@@ -22,6 +22,8 @@ services:
       - NATHION_DATABASE_URL=${NATHION_DATABASE_URL:-sqlite:///./data/nathion.db}
       - NATHION_OLLAMA_BASE_URL=${NATHION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - NATHION_OLLAMA_REQUEST_TIMEOUT_SECONDS=${NATHION_OLLAMA_REQUEST_TIMEOUT_SECONDS:-120}
+      - NATHION_OLLAMA_CONTEXT_SIZE=${NATHION_OLLAMA_CONTEXT_SIZE:-2048}
+      - NATHION_OLLAMA_MAX_OUTPUT_TOKENS=${NATHION_OLLAMA_MAX_OUTPUT_TOKENS:-512}
       - NATHION_DEFAULT_LLM_PROVIDER=${NATHION_DEFAULT_LLM_PROVIDER:-ollama}
       - NATHION_CORS_ALLOW_ORIGINS=${NATHION_CORS_ALLOW_ORIGINS:-["http://localhost:4173","http://localhost:5173"]}
     extra_hosts:
@@ -41,7 +43,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+        VITE_API_BASE_URL: ""
     ports:
       - "127.0.0.1:4173:4173"
     depends_on:

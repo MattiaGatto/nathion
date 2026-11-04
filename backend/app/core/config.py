@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -22,6 +23,8 @@ class Settings(BaseSettings):
     whisper_model_path: str = "./models/whisper"
     piper_model_path: str = "./models/voice.onnx"
     voice_language: str = "it"
+    auth_enabled: bool = True
+    auth_token_file: str = "./data/access-token.txt"
 
     # --- Database ---
     # SQLite file-based per questa milestone. Path assoluto per evitare
@@ -40,6 +43,8 @@ class Settings(BaseSettings):
     # con l'IP del bridge Docker o con network_mode: host (vedi README).
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_request_timeout_seconds: int = 120
+    ollama_context_size: int = Field(default=2048, ge=512, le=131072)
+    ollama_max_output_tokens: int = Field(default=512, ge=16, le=8192)
 
     # --- CORS ---
     cors_allow_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]

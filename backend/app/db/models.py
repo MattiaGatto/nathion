@@ -102,3 +102,13 @@ class Run(Base):
     result: Mapped[str] = mapped_column(Text, default="")
     trace: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ToolAction(Base):
+    __tablename__ = "tool_actions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tool: Mapped[str] = mapped_column(String(50))
+    payload: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    result: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

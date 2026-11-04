@@ -6,7 +6,6 @@ ARG NATHION_EXTRAS=dev
 # Dipendenze di sistema minime (nessuna, per ora — niente build tool
 # non necessari, coerente con "non introdurre dipendenze non necessarie")
 COPY pyproject.toml ./
-COPY app ./app
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir ".[${NATHION_EXTRAS}]"
 

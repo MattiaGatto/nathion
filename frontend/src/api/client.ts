@@ -6,6 +6,8 @@
 // VITE_API_BASE_URL (impostata in docker-compose.yml) punta il browser
 // direttamente alla porta del backend esposta sull'host.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  window.fetch(input, { ...init, credentials: "include" });
 
 export interface ModelInfo {
   id: string;

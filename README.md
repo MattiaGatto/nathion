@@ -1,5 +1,10 @@
 # NATHION
 
+Stato aggiornato: [capacità e lavoro rimanente](docs/STATUS.md).
+Per accesso protetto, chiave locale e avvio aggiornato vedi [OPERATIONS.md](docs/OPERATIONS.md).
+La parte seguente descrive la Foundation originale; i criteri storici non
+certificano le milestone successive.
+
 > Your Intelligence. Your System. Your Control.
 
 Assistente AI personale, locale, multimodale e multi-agent. Questo

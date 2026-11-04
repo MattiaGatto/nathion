@@ -15,6 +15,12 @@ from app.db.session import get_db
 from app.llm.base import ChatMessage, LLMProvider, ModelInfo
 from app.llm.gateway import LLMGateway, get_gateway
 from app.main import app
+from app.core.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def isolated_auth(monkeypatch):
+    monkeypatch.setattr(get_settings(), "auth_enabled", False)
 
 
 class StubProvider(LLMProvider):

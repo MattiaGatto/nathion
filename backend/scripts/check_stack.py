@@ -10,9 +10,12 @@ OUTPUT = ROOT / "backend/data/voice-check"
 
 
 def main() -> None:
+    token_file = ROOT / "backend/data/access-token.txt"
+    token = token_file.read_text(encoding="utf-8").strip() if token_file.exists() else ""
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     audio = (OUTPUT / "sample.wav").read_bytes()
     with connect("ws://127.0.0.1:8000/api/voice/ws", origin="http://localhost:4173",
-                 open_timeout=15) as socket:
+                 open_timeout=15, additional_headers=headers) as socket:
         socket.send(json.dumps({"type": "transcribe", "mime": "audio/wav"}))
         assert json.loads(socket.recv(timeout=15))["type"] == "ready"
         for offset in range(0, len(audio), 16000):
@@ -26,7 +29,7 @@ def main() -> None:
                 transcript = message["text"]
                 break
     print(f"Real WebSocket STT: {transcript}", flush=True)
-    with httpx.Client(base_url="http://127.0.0.1:8000", timeout=180, trust_env=False) as client:
+    with httpx.Client(base_url="http://127.0.0.1:8000", timeout=180, trust_env=False, headers=headers) as client:
         assert client.get("/health").status_code == 200
         models = client.get("/api/models")
         models.raise_for_status()
@@ -45,7 +48,7 @@ def main() -> None:
         assert persisted.json()["messages"][-1]["content"] == reply
     print(f"Real Ollama ({model}): {reply}", flush=True)
     parts = []
-    with connect("ws://127.0.0.1:8000/api/voice/ws", origin="http://localhost:4173") as socket:
+    with connect("ws://127.0.0.1:8000/api/voice/ws", origin="http://localhost:4173", additional_headers=headers) as socket:
         socket.send(json.dumps({"type": "speak", "text": reply}))
         assert json.loads(socket.recv(timeout=15))["type"] == "ready"
         while True:

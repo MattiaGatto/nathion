@@ -5,10 +5,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, health, models, voice, voice_socket, workspace
+from app.api import chat, health, models, voice, voice_socket, workspace, tools
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import init_db
+from app.core.auth import AuthenticationMiddleware, initialize_auth, router as auth_router
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     logger.info("Avvio %s (ambiente=%s)", settings.app_name, settings.environment)
     init_db()
+    initialize_auth()
     yield
     logger.info("Arresto %s", settings.app_name)
 
@@ -26,6 +28,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app.add_middleware(AuthenticationMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -41,6 +44,8 @@ def create_app() -> FastAPI:
     app.include_router(voice.router)
     app.include_router(voice_socket.router)
     app.include_router(workspace.router)
+    app.include_router(auth_router)
+    app.include_router(tools.router)
 
     return app
 

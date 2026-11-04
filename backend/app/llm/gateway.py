@@ -26,6 +26,8 @@ class LLMGateway:
             "ollama": OllamaProvider(
                 base_url=settings.ollama_base_url,
                 timeout_seconds=settings.ollama_request_timeout_seconds,
+                context_size=settings.ollama_context_size,
+                max_output_tokens=settings.ollama_max_output_tokens,
             ),
             # Futuri provider (Milestone successive o on-demand):
             # "lmstudio": LMStudioProvider(...),

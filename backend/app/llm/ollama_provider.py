@@ -21,9 +21,10 @@ logger = logging.getLogger(__name__)
 class OllamaProvider(LLMProvider):
     name = "ollama"
 
-    def __init__(self, base_url: str, timeout_seconds: int = 120) -> None:
+    def __init__(self, base_url: str, timeout_seconds: int = 120, context_size: int = 2048, max_output_tokens: int = 512) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
+        self._options = {"num_ctx": context_size, "num_predict": max_output_tokens}
 
     async def list_models(self) -> list[ModelInfo]:
         url = f"{self._base_url}/api/tags"
@@ -59,6 +60,7 @@ class OllamaProvider(LLMProvider):
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
+            "options": self._options,
         }
 
         try:
@@ -75,6 +77,8 @@ class OllamaProvider(LLMProvider):
                         if content:
                             yield content
                         if data.get("done"):
+                            if data.get("done_reason") == "length":
+                                raise LLMProviderError("Risposta incompleta: raggiunto il limite di generazione. Riduci la richiesta o aumenta NATHION_OLLAMA_MAX_OUTPUT_TOKENS.")
                             break
         except httpx.HTTPError as exc:
             logger.warning("Errore chiamando Ollama su %s: %s", url, exc)

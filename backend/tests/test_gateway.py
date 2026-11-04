@@ -55,3 +55,29 @@ async def test_list_available_models(gateway_with_fake_provider):
 def test_unknown_provider_raises(gateway_with_fake_provider):
     with pytest.raises(ValueError):
         gateway_with_fake_provider.get_provider("does-not-exist")
+
+
+async def test_ollama_request_has_resource_limits(monkeypatch):
+    import httpx
+    from app.llm.ollama_provider import OllamaProvider
+    captured = []
+    def handle(request):
+        import json
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, text='{"message":{"content":"ok"},"done":true}\n')
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handle), **kwargs))
+    provider = OllamaProvider("http://local", context_size=2048, max_output_tokens=128)
+    assert await provider.chat([ChatMessage(role="user", content="test")], "test") == "ok"
+    assert captured[0]["options"] == {"num_ctx": 2048, "num_predict": 128}
+
+
+async def test_output_limit_is_not_reported_as_complete(monkeypatch):
+    import httpx
+    from app.llm.base import LLMProviderError
+    from app.llm.ollama_provider import OllamaProvider
+    real_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, text='{"message":{"content":"partial"},"done":true,"done_reason":"length"}\n'))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_client(transport=transport, **kwargs))
+    with pytest.raises(LLMProviderError, match="incompleta"):
+        await OllamaProvider("http://local").chat([ChatMessage(role="user", content="test")], "test")

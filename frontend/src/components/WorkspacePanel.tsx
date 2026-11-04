@@ -4,6 +4,7 @@ import { workspaceRequest } from "../api/client";
 interface Agent { id: string; name: string; description: string; skills: string[]; }
 interface Memory { id: string; content: string; category: string; source: string; certainty: string; }
 interface Run { id: string; prompt: string; status: string; result: string; trace: Record<string, unknown>[]; }
+interface Action { id: string; tool: string; status: string; payload: string; }
 interface Props { model: string | null; onClose: () => void; }
 
 export function WorkspacePanel({ model, onClose }: Props) {
@@ -15,10 +16,14 @@ export function WorkspacePanel({ model, onClose }: Props) {
   const [category, setCategory] = useState("project");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [actions, setActions] = useState<Action[]>([]);
+  const [expression, setExpression] = useState("");
+  const [calculation, setCalculation] = useState("");
 
   async function reload() {
-    const [a, m, r] = await Promise.all([workspaceRequest<Agent[]>("agents"), workspaceRequest<Memory[]>("memory"), workspaceRequest<Run[]>("runs")]);
+    const [a, m, r, t] = await Promise.all([workspaceRequest<Agent[]>("agents"), workspaceRequest<Memory[]>("memory"), workspaceRequest<Run[]>("runs"), workspaceRequest<Action[]>("tools/actions")]);
     setAgents(a); setMemories(m); setRuns(r);
+    setActions(t);
   }
   useEffect(() => { reload().catch((e) => setError(e.message)); }, []);
   useEffect(() => {
@@ -46,9 +51,18 @@ export function WorkspacePanel({ model, onClose }: Props) {
     } catch (e) { setError(e instanceof Error ? e.message : "Salvataggio fallito"); }
   }
   async function forget(id: string) {
-    if (!window.confirm("Eliminare definitivamente questa memoria?")) return;
-    try { await workspaceRequest(`memory/${id}`, { method: "DELETE" }); await reload(); }
+    try { await workspaceRequest("tools/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool: "memory.delete", memory_id: id }) }); await reload(); }
     catch (e) { setError(e instanceof Error ? e.message : "Eliminazione fallita"); }
+  }
+  async function decide(id: string, decision: "approve" | "reject") {
+    try { await workspaceRequest(`tools/actions/${id}/${decision}`, { method: "POST" }); await reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : "Decisione fallita"); }
+  }
+  async function calculate() {
+    try {
+      const result = await workspaceRequest<{ result: number }>("tools/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool: "calculator", expression }) });
+      setCalculation(String(result.result)); setError("");
+    } catch (e) { setError(e instanceof Error ? e.message : "Calcolo fallito"); }
   }
   const button = "rounded-lg border border-nathion-border px-3 py-2 text-sm disabled:opacity-40";
   return <section className="absolute inset-0 z-30 overflow-y-auto bg-nathion-bg p-5 text-nathion-text" aria-label="Centro di controllo">
@@ -67,6 +81,11 @@ export function WorkspacePanel({ model, onClose }: Props) {
         <button className={button} disabled={!note.trim()} onClick={remember}>Salva memoria</button>
         {memories.map((m) => <article key={m.id} className="rounded-xl border border-nathion-border p-4"><p className="whitespace-pre-wrap">{m.content}</p><p className="mt-1 text-xs text-nathion-muted">{m.category} · {m.source} · {m.certainty}</p><button className={button} onClick={() => forget(m.id)}>Elimina</button></article>)}
       </section>
+      <section className="space-y-3"><h2 className="text-lg">Operazioni da approvare</h2>
+        {actions.filter((a) => a.status === "pending").map((a) => <article key={a.id} className="rounded-xl border border-nathion-border p-4"><p>Eliminare la memoria: {memories.find((m) => m.id === JSON.parse(a.payload).memory_id)?.content ?? "memoria già rimossa"}</p><div className="mt-3 flex gap-2"><button className={button} onClick={() => decide(a.id, "approve")}>Approva eliminazione</button><button className={button} onClick={() => decide(a.id, "reject")}>Rifiuta</button></div></article>)}
+        {!actions.some((a) => a.status === "pending") && <p className="text-sm text-nathion-muted">Nessuna operazione in attesa.</p>}
+      </section>
+      <section className="space-y-3"><h2 className="text-lg">Calcolatrice locale</h2><input aria-label="Espressione aritmetica" className="rounded-lg bg-nathion-panel p-3" value={expression} onChange={(e) => setExpression(e.target.value)} maxLength={200} />{" "}<button className={button} onClick={calculate}>Calcola</button><output className="ml-3">{calculation}</output></section>
     </div>
   </section>;
 }

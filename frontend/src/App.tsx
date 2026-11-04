@@ -4,14 +4,20 @@ import { ChatWindow } from "./components/ChatWindow";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkspacePanel } from "./components/WorkspacePanel";
+import { AccessGate } from "./components/AccessGate";
+import { workspaceRequest } from "./api/client";
 
 export default function App() {
+  return <AccessGate><Application /></AccessGate>;
+}
+
+function Application() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [bootError, setBootError] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
@@ -125,6 +131,7 @@ export default function App() {
 
       <main className="relative min-w-0 flex-1 pt-10">
         <button className="absolute right-4 top-2 text-xs text-nathion-accent" onClick={() => setWorkspaceOpen(true)}>Centro di controllo</button>
+        <button className="absolute left-4 top-2 text-xs text-nathion-muted" onClick={() => workspaceRequest("auth/logout", { method: "POST" }).then(() => window.location.reload())}>Esci</button>
         {workspaceOpen && <WorkspacePanel model={model} onClose={() => setWorkspaceOpen(false)} />}
         {activeId && (
           <ChatWindow
