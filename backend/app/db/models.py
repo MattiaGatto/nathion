@@ -81,3 +81,24 @@ class AppSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now
     )
+
+
+class Memory(Base):
+    __tablename__ = "memories"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    content: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(30))
+    source: Mapped[str] = mapped_column(String(200))
+    certainty: Mapped[str] = mapped_column(String(20), default="fact")
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Run(Base):
+    __tablename__ = "runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    prompt: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    result: Mapped[str] = mapped_column(Text, default="")
+    trace: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

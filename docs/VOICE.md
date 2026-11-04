@@ -71,11 +71,11 @@ esclusi da Git. Le registrazioni normali dell'app non sono salvate.
 ## Criteri di accettazione
 
 - [ ] Microfono reale: frase italiana trascritta e modificabile prima dell'invio.
-- [ ] Trascrizione inviata alla chat con risposta Ollama reale persistita.
+- [x] Trascrizione inviata alla chat con risposta Ollama reale persistita.
 - [ ] Piper produce una risposta udibile, arrestabile dal browser.
 - [ ] Cambio conversazione smette di registrare/riprodurre e ignora risultati vecchi.
 - [x] Motore STT/TTS offline con modelli già presenti (audio sintetico).
-- [ ] Docker Compose vocale avviato e verificato.
+- [x] Docker Compose vocale avviato e verificato tramite API.
 
 I test automatici coprono contratti API, disattivazione, errori, validazione
 e limiti di upload con adattatori sostituiti. Non dimostrano accuratezza STT,
@@ -86,6 +86,12 @@ da Piper e trascritta da Whisper Tiny. Primo caricamento incluso:
 18,83 s sintesi, 9,34 s trascrizione. Il risultato conserva la frase di
 test, ma omette il saluto iniziale: non è una misura di accuratezza generale.
 Motori: faster-whisper 1.2.1, Piper 1.8.0, PyAV 16.1.0 su Windows CPU.
+
+Verifica del 5 novembre 2026: percorso WebSocket STT → Ollama llama3.2:3b
+→ persistenza → WebSocket TTS superato. Risposta sintetizzata: "Sono pronto
+a rispondere alle tue domande!", WAV ricevuto di 90668 byte. Report locale
+in `backend/data/voice-check/stack-report.json`. Prova microfono e ascolto
+dal browser restano da eseguire.
 
 Non ancora implementati: fine turno automatica, conversazione continua,
 barge-in automatico e autenticazione. Le porte Docker sono vincolate a

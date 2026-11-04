@@ -3,6 +3,7 @@ import { api, type ConversationSummary } from "./api/client";
 import { ChatWindow } from "./components/ChatWindow";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { WorkspacePanel } from "./components/WorkspacePanel";
 
 export default function App() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -12,6 +13,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
   const refreshConversations = useCallback(async () => {
     const list = await api.listConversations();
@@ -121,7 +123,9 @@ export default function App() {
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
 
-      <main className="min-w-0 flex-1">
+      <main className="relative min-w-0 flex-1 pt-10">
+        <button className="absolute right-4 top-2 text-xs text-nathion-accent" onClick={() => setWorkspaceOpen(true)}>Centro di controllo</button>
+        {workspaceOpen && <WorkspacePanel model={model} onClose={() => setWorkspaceOpen(false)} />}
         {activeId && (
           <ChatWindow
             key={activeId}

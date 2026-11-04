@@ -50,6 +50,10 @@ async function handle<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function workspaceRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  return handle<T>(await fetch(`${API_BASE_URL}/api/${path}`, options));
+}
+
 export const api = {
   voiceStatus: () => fetch(`${API_BASE_URL}/api/voice/status`).then((r) =>
     handle<{ enabled: boolean; whisper_model_present: boolean; piper_model_present: boolean }>(r)),

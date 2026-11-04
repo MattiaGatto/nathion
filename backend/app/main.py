@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, health, models, voice, voice_socket
+from app.api import chat, health, models, voice, voice_socket, workspace
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import init_db
@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(voice.router)
     app.include_router(voice_socket.router)
+    app.include_router(workspace.router)
 
     return app
 
