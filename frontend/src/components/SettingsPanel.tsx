@@ -21,21 +21,33 @@ export function SettingsPanel({ open, onClose, currentModel, onModelSaved }: Pro
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [provider, setProvider] = useState("ollama");
+  const [providers, setProviders] = useState<string[]>(["ollama"]);
+
+  useEffect(() => {
+    if (!open) return;
+    Promise.all([api.getSettings(), api.listProviders()]).then(([settings, available]) => {
+      setProvider(settings.default_provider); setProviders(available);
+    }).catch((e) => setLoadError(e.message));
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    let active = true;
     setLoadError(null);
     setSaved(false);
     api
-      .listModels()
+      .listModels(provider)
       .then((list) => {
+        if (!active) return;
         setModels(list);
-        setSelected((prev) => prev ?? list[0]?.id ?? null);
+        setSelected((prev) => list.some((m) => m.id === prev) ? prev : list[0]?.id ?? null);
       })
-      .catch((err) => setLoadError(err.message))
-      .finally(() => setLoading(false));
-  }, [open]);
+      .catch((err) => { if (active) setLoadError(err.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [open, provider]);
 
   useEffect(() => {
     setSelected(currentModel);
@@ -47,7 +59,7 @@ export function SettingsPanel({ open, onClose, currentModel, onModelSaved }: Pro
     if (!selected) return;
     setSaving(true);
     try {
-      await api.updateSettings({ default_provider: "ollama", default_model: selected });
+      await api.updateSettings({ default_provider: provider, default_model: selected });
       onModelSaved(selected);
       setSaved(true);
       setTimeout(() => onClose(), 500);
@@ -87,13 +99,9 @@ export function SettingsPanel({ open, onClose, currentModel, onModelSaved }: Pro
             <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-nathion-muted">
               Provider LLM
             </label>
-            <div className="flex items-center gap-2 rounded-lg border border-nathion-border bg-nathion-surface px-3 py-2 text-sm text-nathion-text">
-              <span className="h-1.5 w-1.5 rounded-full bg-nathion-accent" />
-              Ollama (locale)
-            </div>
+            <select aria-label="Provider LLM" className="w-full rounded-lg bg-nathion-surface p-2" value={provider} onChange={(e) => { setProvider(e.target.value); setSelected(null); }}>{providers.map((name) => <option key={name} value={name}>{name === "ollama" ? "Ollama (locale)" : "Server compatibile configurato"}</option>)}</select>
             <p className="mt-1 text-[11px] text-nathion-muted">
-              Altri provider (LM Studio, vLLM, OpenAI) arriveranno in milestone successive — il
-              gateway e&apos; gia&apos; pronto ad accoglierli.
+              Le connessioni aggiuntive vengono abilitate dalla configurazione del proprietario.
             </p>
           </div>
 

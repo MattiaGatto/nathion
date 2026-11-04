@@ -50,7 +50,7 @@ function Application() {
             const models = await api.listModels();
             if (!cancelled && models[0]) {
               setModel(models[0].id);
-              await api.updateSettings({ default_provider: "ollama", default_model: models[0].id });
+              await api.updateSettings({ default_provider: settings.default_provider, default_model: models[0].id });
             }
           } catch {
             // Silenzioso: l'utente vedra' comunque lo stato "nessun

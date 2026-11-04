@@ -19,6 +19,7 @@ from app.db.models import Conversation, Message, MessageRole
 from app.db.session import SessionLocal, get_db
 from app.llm.base import ChatMessage, LLMProviderError
 from app.llm.gateway import LLMGateway, get_gateway
+from app.core.preferences import default_provider
 from app.schemas.chat import (
     ConversationDetailOut,
     ConversationOut,
@@ -109,8 +110,8 @@ async def send_message(
     history = [ChatMessage(role=m.role.value, content=m.content) for m in conversation.messages]
 
     try:
-        reply = await gateway.chat(history, model=body.model, provider=body.provider)
-    except LLMProviderError as exc:
+        reply = await gateway.chat(history, model=body.model, provider=body.provider or default_provider(db))
+    except (LLMProviderError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     assistant_message = Message(
@@ -165,10 +166,10 @@ async def chat_websocket(
 
             full_reply = ""
             try:
-                async for chunk in gateway.chat_stream(history, model=model, provider=provider):
+                async for chunk in gateway.chat_stream(history, model=model, provider=provider or default_provider(db)):
                     full_reply += chunk
                     await websocket.send_json({"type": "chunk", "content": chunk})
-            except LLMProviderError as exc:
+            except (LLMProviderError, ValueError) as exc:
                 await websocket.send_json({"type": "error", "detail": str(exc)})
                 continue
 

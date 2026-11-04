@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+import yaml
 from sqlalchemy.orm import Session
 
-from app.db.models import Memory, Run
+from app.db.models import Memory, Run, AppSettings
 from app.llm.base import ChatMessage
 from app.llm.gateway import LLMGateway
 from app.api.tools import calculate
+from app.memory import retrieve_context
 
 
 class Agent(BaseModel):
@@ -42,6 +44,21 @@ AGENTS = {item.id: item for item in [
 ]}
 
 
+class AgentPatch(BaseModel):
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    memory_access: Literal["read", "none"] = "read"
+    timeout_seconds: int = Field(default=60, ge=5, le=120)
+
+
+def load_agents(db: Session) -> dict[str, Agent]:
+    result = {}
+    for key, agent in AGENTS.items():
+        setting = db.get(AppSettings, f"agent:{key}")
+        values = {**agent.model_dump(), **(json.loads(setting.value) if setting else {})}
+        result[key] = Agent.model_validate(values)
+    return result
+
+
 class Skill(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{0,60}$")
     name: str
@@ -59,8 +76,10 @@ def discover_skills(root: Path | None = None) -> list[Skill]:
         if len(raw) > 16000 or not raw.startswith("---\n"):
             raise ValueError(f"Skill non valida: {path.name}")
         header, body = raw[4:].split("\n---\n", 1)
-        # JSON is a safe YAML subset; no YAML execution or extra dependency.
-        skill = Skill.model_validate({**json.loads(header), "instructions": body.strip()})
+        metadata = yaml.safe_load(header)
+        if not isinstance(metadata, dict):
+            raise ValueError("Metadati YAML non validi")
+        skill = Skill.model_validate({**metadata, "instructions": body.strip()})
         if any(agent not in AGENTS for agent in skill.agents) or any(s.id == skill.id for s in skills):
             raise ValueError("Skill duplicata o agente sconosciuto")
         skills.append(skill)
@@ -148,8 +167,9 @@ def plan(prompt: str) -> list[Task]:
 
 async def execute_run(body: RunIn, db: Session, gateway: LLMGateway) -> Run:
     tasks = body.tasks or plan(body.prompt)
+    agents = load_agents(db)
     skills = discover_skills()
-    memories = retrieve(db, body.prompt) if body.use_memory else []
+    memories, memory_mode = await retrieve_context(db, body.prompt, retrieve(db, body.prompt, 30)) if body.use_memory else ([], "disabled")
     row = Run(prompt=body.prompt)
     db.add(row); db.commit(); db.refresh(row)
     events, outputs = [], {}
@@ -160,11 +180,11 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway) -> Run:
         row.trace = json.dumps(events, ensure_ascii=False)
         db.commit()
 
-    event("plan", tasks=[task.model_dump() for task in tasks], memory_ids=[m.id for m in memories])
+    event("plan", tasks=[task.model_dump() for task in tasks], memory_ids=[m.id for m in memories], memory_mode=memory_mode)
 
     async def invoke(task: Task):
         async with semaphore:
-            agent = AGENTS[task.agent_id]
+            agent = agents[task.agent_id]
             chosen = [skill for skill in skills if skill.id in agent.skills and agent.id in skill.agents]
             event("started", task=task.id, agent=agent.id, skills=[s.id for s in chosen])
             if task.tool:

@@ -92,6 +92,14 @@ class Memory(Base):
     certainty: Mapped[str] = mapped_column(String(20), default="fact")
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    vectors: Mapped[list["MemoryVector"]] = relationship(cascade="all, delete-orphan")
+
+
+class MemoryVector(Base):
+    __tablename__ = "memory_vectors"
+    memory_id: Mapped[str] = mapped_column(ForeignKey("memories.id"), primary_key=True)
+    model: Mapped[str] = mapped_column(String(200))
+    embedding: Mapped[str] = mapped_column(Text)
 
 
 class Run(Base):

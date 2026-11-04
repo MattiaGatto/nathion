@@ -5,11 +5,11 @@ distingue capacità effettive da lavoro ancora richiesto.
 
 | Area | Implementazione attuale | Lavoro ancora richiesto |
 | --- | --- | --- |
-| Foundation | Chat, Ollama, SQLite, Docker, gateway astratto | Altri provider reali |
+| Foundation | Chat, Ollama, SQLite, Docker, adattatore compatibile opt-in | Collaudo reale LM Studio/vLLM o provider remoto configurato |
 | Voce | Whisper/Piper locali, filtro Silero, WS, parziali e coda per frasi, stop manuale | Fine turno e interruzione automatiche, prova microfono/browser |
-| Orchestratore | 7 agenti, routing per regole, DAG, parallelismo limitato, timeout, aggregazione | Piani LLM validati, configurazione persistente per agente, job riprendibili |
+| Orchestratore | 7 agenti configurabili, routing per regole, DAG, parallelismo limitato, timeout, aggregazione | Piani LLM validati, job riprendibili |
 | Skills | Discovery file, metadata validati, selezione e caricamento per agente | Composizione e gestione UI delle skills |
-| Memoria | SQLite, categorie, provenienza, certezza, deduplica, BM25, UI | Embedding e retrieval ibrido, aggiornamento/sintesi selettiva |
+| Memoria | SQLite, categorie, provenienza, certezza, deduplica, BM25 + vettori locali, modifica e ricerca UI | Estrazione e sintesi automatica selettiva, valutazione su dati reali |
 | Multi-agent voice | Coda audio di una risposta | Profili distinti e ascolto del dialogo tra agenti |
 | Mobile | UI responsive, manifest, service worker, proxy, autenticazione | Prova telefono, HTTPS/Tailscale configurati nell'ambiente reale |
 | Tool engine | Registry, calcolatrice e orologio con permessi per agente, cancellazione memoria con approvazione persistita | Tool calling LLM dinamico, MCP e altri adattatori |

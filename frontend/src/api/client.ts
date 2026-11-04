@@ -73,7 +73,8 @@ export const api = {
   },
   health: () => fetch(`${API_BASE_URL}/health`).then((r) => handle<{ status: string }>(r)),
 
-  listModels: () => fetch(`${API_BASE_URL}/api/models`).then((r) => handle<ModelInfo[]>(r)),
+  listModels: (provider?: string) => fetch(`${API_BASE_URL}/api/models${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`).then((r) => handle<ModelInfo[]>(r)),
+  listProviders: () => workspaceRequest<string[]>("providers"),
 
   getSettings: () =>
     fetch(`${API_BASE_URL}/api/settings`).then((r) => handle<SettingsPayload>(r)),

@@ -69,3 +69,24 @@ python scripts/check_product.py
 Gli script reali richiedono i container attivi e la copia locale della chiave.
 Il secondo usa audio sintetico. Il terzo verifica accesso, proxy, assets PWA,
 skills, memoria e due agenti con dipendenza su Ollama. I report sono in data.
+
+## Provider e memoria semantica
+
+Un server compatibile si abilita esplicitamente in .env con
+NATHION_COMPATIBLE_BASE_URL, per esempio http://host.docker.internal:1234/v1
+per un LM Studio locale nell'host. Se serve, aggiungi NATHION_COMPATIBLE_API_KEY.
+Ricrea il backend; il provider appare nelle impostazioni. Non sono stati
+configurati servizi cloud. Il contratto è testato, ma LM Studio/vLLM non sono
+stati avviati per il collaudo reale.
+
+NATHION_MEMORY_EMBEDDING_MODEL=mxbai-embed-large:latest è attivo nel .env di
+questo PC e usa il modello Ollama già installato. Lascia vuoto per sola ricerca
+per parole. La UI mostra quante memorie sono indicizzate e consente di
+indicizzare quelle mancanti, dieci alla volta. Modifica e cancellazione
+invalidano o rimuovono i vettori. La ricerca ripiega su BM25 quando necessario,
+indicando il percorso usato nell'header X-Memory-Retrieval e nelle tracce.
+
+`python scripts/check_memory.py` prova con modello reale la ricerca semantica
+di una nota temporanea e la elimina alla fine. I modelli embedding non sono
+scaricati dalle richieste dell'app. Le memorie passate agli agenti rimangono
+verificabili con fonte e distinzione tra fatti e inferenze.

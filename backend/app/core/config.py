@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, SecretStr
 
 
 class Settings(BaseSettings):
@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     voice_language: str = "it"
     auth_enabled: bool = True
     auth_token_file: str = "./data/access-token.txt"
+    compatible_base_url: str = ""
+    compatible_api_key: SecretStr = SecretStr("")
+    memory_embedding_model: str = ""
 
     # --- Database ---
     # SQLite file-based per questa milestone. Path assoluto per evitare

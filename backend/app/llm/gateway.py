@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from app.core.config import Settings, get_settings
 from app.llm.base import ChatMessage, LLMProvider, ModelInfo
 from app.llm.ollama_provider import OllamaProvider
+from app.llm.compatible import CompatibleProvider
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,9 @@ class LLMGateway:
             # "lmstudio": LMStudioProvider(...),
             # "openai": OpenAIProvider(...),
         }
+        if settings.compatible_base_url:
+            self._providers["compatible"] = CompatibleProvider(settings.compatible_base_url,
+                settings.compatible_api_key.get_secret_value(), settings.ollama_max_output_tokens)
 
     def get_provider(self, name: str | None = None) -> LLMProvider:
         provider_name = name or self._settings.default_llm_provider
