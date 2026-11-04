@@ -1,0 +1,13 @@
+# docker compose -f docker-compose.yml -f docker-compose.voice.yml up --build
+services:
+  backend:
+    build:
+      args:
+        NATHION_EXTRAS: dev,voice
+    environment:
+      NATHION_VOICE_ENABLED: "true"
+      NATHION_WHISPER_MODEL_PATH: /models/whisper
+      NATHION_PIPER_MODEL_PATH: /models/voice.onnx
+      NATHION_VOICE_LANGUAGE: it
+    volumes:
+      - ./models:/models:ro

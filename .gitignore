@@ -16,3 +16,9 @@ frontend/.vite/
 
 # OS
 .DS_Store
+.venv/
+.uv-cache/
+.python/
+.npm-cache/
+models/
+build/

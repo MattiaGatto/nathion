@@ -4,6 +4,7 @@ interface Props {
   disabled: boolean;
   placeholder: string;
   onSend: (text: string) => void;
+  draft?: { text: string };
 }
 
 const MAX_HEIGHT_PX = 160;
@@ -11,9 +12,10 @@ const MAX_HEIGHT_PX = 160;
 /** Textarea che cresce con il contenuto (fino a un limite), Invio per
  * inviare e Shift+Invio per andare a capo — comportamento atteso in
  * qualunque client di chat moderno. */
-export function Composer({ disabled, placeholder, onSend }: Props) {
+export function Composer({ disabled, placeholder, onSend, draft }: Props) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { if (draft !== undefined) setValue(draft.text); }, [draft]);
 
   useEffect(() => {
     const el = textareaRef.current;

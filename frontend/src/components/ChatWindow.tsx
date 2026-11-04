@@ -6,6 +6,7 @@ import { EmptyState } from "./EmptyState";
 import { MessageBubble } from "./MessageBubble";
 import { StatusIndicator } from "./StatusIndicator";
 import { TypingIndicator } from "./TypingIndicator";
+import { VoiceControls } from "./VoiceControls";
 
 interface Props {
   conversationId: string;
@@ -23,11 +24,13 @@ export function ChatWindow({
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [voiceDraft, setVoiceDraft] = useState<{ text: string }>();
 
   const { status, streaming, error, sendMessage } = useChatSocket(conversationId, model);
 
   useEffect(() => {
     setConversation(null);
+    setVoiceDraft(undefined);
     setLoadError(null);
     api
       .getConversation(conversationId)
@@ -123,8 +126,12 @@ export function ChatWindow({
 
       <div className="border-t border-nathion-border px-6 py-4">
         <div className="mx-auto max-w-3xl">
+          <VoiceControls key={conversationId} disabled={status !== "open" || Boolean(streaming && !streaming.done)}
+            onTranscript={(text) => setVoiceDraft({ text })}
+            reply={conversation?.messages.filter((m) => m.role === "assistant").at(-1)?.content ?? ""} />
           <Composer
-            disabled={!model}
+            draft={voiceDraft}
+            disabled={status !== "open" || Boolean(streaming && !streaming.done)}
             placeholder={model ? "Scrivi un messaggio…" : "Seleziona un modello dalle impostazioni…"}
             onSend={handleSend}
           />

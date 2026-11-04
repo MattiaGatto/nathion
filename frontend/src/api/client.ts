@@ -51,6 +51,20 @@ async function handle<T>(response: Response): Promise<T> {
 }
 
 export const api = {
+  voiceStatus: () => fetch(`${API_BASE_URL}/api/voice/status`).then((r) =>
+    handle<{ enabled: boolean; whisper_model_present: boolean; piper_model_present: boolean }>(r)),
+  transcribe: (audio: Blob, signal?: AbortSignal) =>
+    fetch(`${API_BASE_URL}/api/voice/transcribe`, {
+      method: "POST", headers: { "Content-Type": audio.type }, body: audio, signal,
+    }).then((r) => handle<{ text: string }>(r)),
+  speak: async (text: string, signal?: AbortSignal) => {
+    const response = await fetch(`${API_BASE_URL}/api/voice/speak`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }), signal,
+    });
+    if (!response.ok) { await handle<never>(response); }
+    return response.blob();
+  },
   health: () => fetch(`${API_BASE_URL}/health`).then((r) => handle<{ status: string }>(r)),
 
   listModels: () => fetch(`${API_BASE_URL}/api/models`).then((r) => handle<ModelInfo[]>(r)),
@@ -90,4 +104,9 @@ export function chatWebSocketUrl(conversationId: string, model: string): string 
   const host = base.replace(/^https?:\/\//, "");
   const params = new URLSearchParams({ model });
   return `${protocol}://${host}/api/chat/ws/chat/${conversationId}?${params}`;
+}
+
+export function voiceWebSocketUrl(): string {
+  const base = API_BASE_URL || window.location.origin;
+  return `${base.replace(/^http/, "ws")}/api/voice/ws`;
 }

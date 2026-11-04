@@ -15,7 +15,7 @@ services:
     build:
       context: ./backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - NATHION_ENVIRONMENT=${NATHION_ENVIRONMENT:-development}
       - NATHION_LOG_LEVEL=${NATHION_LOG_LEVEL:-INFO}
@@ -43,7 +43,7 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     ports:
-      - "4173:4173"
+      - "127.0.0.1:4173:4173"
     depends_on:
       backend:
         condition: service_healthy

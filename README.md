@@ -133,4 +133,9 @@ docs/adr/          # Architecture Decision Records
 
 ## Prossimo passo
 
-Milestone 2 — Voice Engine (microfono, VAD, STT/TTS, streaming audio).
+Milestone 2 — Voice Engine: modelli locali installati e prova STT/TTS offline
+superata; prova microfono ancora da eseguire. Istruzioni e criteri di accettazione
+in [docs/VOICE.md](docs/VOICE.md), decisioni in ADR-003.
+Comprende registrazione via WebSocket, trascrizioni parziali, revisione del
+testo finale e coda audio Piper per frasi. La conversazione continua resta
+da implementare.

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     app_name: str = "NATHION"
     environment: str = "development"  # development | production
     log_level: str = "INFO"
+    voice_enabled: bool = False
+    whisper_model_path: str = "./models/whisper"
+    piper_model_path: str = "./models/voice.onnx"
+    voice_language: str = "it"
 
     # --- Database ---
     # SQLite file-based per questa milestone. Path assoluto per evitare
@@ -38,7 +42,7 @@ class Settings(BaseSettings):
     ollama_request_timeout_seconds: int = 120
 
     # --- CORS ---
-    cors_allow_origins: list[str] = ["http://localhost:5173"]
+    cors_allow_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
 
     @property
     def data_dir(self) -> Path:
