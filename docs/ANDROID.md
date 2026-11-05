@@ -2,13 +2,12 @@
 
 ## APK per il PC di Mattia
 
-Il file firmato si trova in `android/build/NATHION.apk`. Copialo sul telefono
+Il file firmato NATHION 1.1 si trova in `android/build/NATHION.apk`. Puoi installarlo sopra la versione 1.0 per mantenere il server memorizzato. Copialo sul telefono
 via USB o attraverso un canale privato. Aprilo dal gestore file di Android e
 consenti al gestore di installare l'app se Android lo richiede.
 
 Connetti Tailscale sul telefono con lo stesso account del PC. Apri NATHION,
-premi **Connetti al PC** sull'indirizzo precompilato e accedi con l'account
-dell'app. Se il browser sul PC usa già una sessione, l'APK richiede comunque
+premi **Connetti al PC** sull’indirizzo precompilato e accedi con l’email e la password dell’app. Se il browser sul PC usa già una sessione, l'APK richiede comunque
 le proprie credenziali. **Profilo** contiene i dati personali e la funzione Esci.
 Per registrare un ospite serve un invito emesso dall'amministratore.
 
@@ -20,14 +19,20 @@ lo riconosce senza una configurazione di fiducia separata.
 
 ## Uso vocale
 
-Premi **Parla con NATHION** e consenti il microfono. La frase riconosciuta,
-lo stato e la risposta appaiono a video. Il testo della risposta viene letto
-per frasi. In **Opzioni vocali** puoi scegliere la voce Paola o Riccardo e
-abilitare l'interruzione parlando. Per la parola di attivazione seleziona
-**Attiva con Ehi Nathion**, avvia la sessione e pronuncia la parola chiave,
-anche seguita dalla richiesta. L'ascolto usa Whisper sul PC e funziona con
-l'app in primo piano. Dopo l'attivazione, la sessione si chiude dopo
-20 secondi di inattività in ascolto.
+Tocca il microfono, consenti il permesso Android e pronuncia **Ehi Nathion**
+seguito dalla richiesta. Per chiamare uno specialista, dì per esempio
+**Ehi Nathion, chiedi a Vega di leggere il manuale**. In modalità voce la chat
+resta dietro la console. Il colore viola indica che hai chiamato un agente.
+**Mostra chat** riporta alla conversazione. Durante la lettura, **Tocca per parlare** ti ridà il turno. Dopo 20 secondi di inattività puoi
+toccare di nuovo il microfono per continuare senza ripetere la parola chiave.
+Tieni NATHION in primo piano e usa l’orientamento verticale. In **Opzioni vocali**
+puoi abilitare l’interruzione parlando, preferibilmente con le cuffie.
+
+**Impostazioni → Modifica profilo** apre foto, dati personali e bio Markdown.
+In **Agenti → Studio → Documenti** puoi allegare un file dal selettore Android.
+**Registro attività → Esporta registro JSON** apre la scelta della cartella
+in cui salvare il file. Il menu **Connessione PC** permette di ricaricare o
+cambiare il server.
 
 Sul PC di Mattia è attivo Whisper Base. In un confronto sulla stessa frase
 sintetica ha riconosciuto il testo corretto. Per prepararlo su un'altra

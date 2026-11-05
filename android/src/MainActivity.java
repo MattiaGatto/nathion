@@ -4,12 +4,15 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.ActivityNotFoundException;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.provider.DocumentsContract;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
@@ -17,15 +20,24 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
+import android.webkit.ValueCallback;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
 
 public class MainActivity extends Activity {
     private static final int MICROPHONE = 10;
+    private static final int PICK_FILE = 11;
+    private static final int SAVE_LOG = 12;
+    private static final int MAX_EXPORT = 16 * 1024 * 1024;
+    private ValueCallback<Uri[]> pendingFile;
+    private byte[] pendingExport;
     private LinearLayout root;
     private WebView web;
     private PermissionRequest pendingMicrophone;
@@ -33,6 +45,9 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setStatusBarColor(Color.rgb(9, 15, 24));
+        getWindow().setNavigationBarColor(Color.rgb(9, 15, 24));
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         String saved = getPreferences(MODE_PRIVATE).getString("server", "");
         if (saved.isEmpty()) showConnection();
         else connect(saved);
@@ -84,16 +99,19 @@ public class MainActivity extends Activity {
         server = candidate;
         getPreferences(MODE_PRIVATE).edit().putString("server", origin(candidate)).apply();
         layout();
-        LinearLayout bar = new LinearLayout(this);
-        Button edit = new Button(this);
-        edit.setText("Server");
-        edit.setOnClickListener(view -> showConnection());
-        Button reload = new Button(this);
-        reload.setText("Riprova");
-        reload.setOnClickListener(view -> web.loadUrl(origin(server)));
-        bar.addView(edit);
-        bar.addView(reload);
-        root.addView(bar);
+        Button connectionMenu = new Button(this, null, android.R.attr.borderlessButtonStyle);
+        connectionMenu.setText("Connessione PC  ⋯");
+        connectionMenu.setAllCaps(false);
+        connectionMenu.setTextSize(13);
+        connectionMenu.setOnClickListener(view -> new AlertDialog.Builder(this)
+            .setTitle("Connessione NATHION")
+            .setMessage(origin(server))
+            .setNeutralButton("Cambia PC", (dialog, which) -> showConnection())
+            .setNegativeButton("Chiudi", null)
+            .setPositiveButton("Ricarica", (dialog, which) -> web.loadUrl(origin(server)))
+            .show());
+        root.addView(connectionMenu, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, (int) (44 * getResources().getDisplayMetrics().density)));
         TextView connection = new TextView(this);
         connection.setText("Connessione al PC…");
         root.addView(connection);
@@ -104,7 +122,7 @@ public class MainActivity extends Activity {
         web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
-        // This bridge can only request a native confirmation for a fixed system action.
+        // The bridge opens system confirmation or a user-selected document destination.
         web.addJavascriptInterface(new PhoneActions(), "NathionPhone");
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -117,7 +135,7 @@ public class MainActivity extends Activity {
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
                     connection.setVisibility(android.view.View.VISIBLE);
-                    connection.setText("PC non raggiungibile. Controlla Tailscale sul telefono e NATHION sul PC, poi premi Riprova.");
+                    connection.setText("PC non raggiungibile. Controlla Tailscale e NATHION sul PC, poi usa Connessione PC → Ricarica.");
                 }
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
@@ -126,6 +144,26 @@ public class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (!trustedPage() || pendingFile != null || params.getMode() != FileChooserParams.MODE_OPEN) return false;
+                Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                picker.addCategory(Intent.CATEGORY_OPENABLE);
+                picker.setType("*/*");
+                String[] types = java.util.Arrays.stream(params.getAcceptTypes())
+                    .filter(type -> type.matches("[a-zA-Z0-9.+-]+/[a-zA-Z0-9.+*-]+"))
+                    .toArray(String[]::new);
+                if (types.length == 1) picker.setType(types[0]);
+                else if (types.length > 1) picker.putExtra(Intent.EXTRA_MIME_TYPES, types);
+                try {
+                    pendingFile = callback;
+                    startActivityForResult(picker, PICK_FILE);
+                    return true;
+                } catch (ActivityNotFoundException e) {
+                    pendingFile = null;
+                    Toast.makeText(MainActivity.this, "Selettore file non disponibile", Toast.LENGTH_SHORT).show();
+                    return false;
+                }
+            }
             @Override public void onPermissionRequest(PermissionRequest request) {
                 if (!sameOrigin(request.getOrigin()) || !java.util.Arrays.asList(request.getResources())
                         .contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
@@ -158,16 +196,66 @@ public class MainActivity extends Activity {
                 && server.getHost().equalsIgnoreCase(uri.getHost()) && port(server.getPort()) == port(uri.getPort());
     }
 
+    private boolean trustedPage() {
+        return web != null && web.getUrl() != null && sameOrigin(Uri.parse(web.getUrl()));
+    }
+
     public final class PhoneActions {
+        @JavascriptInterface public void saveActivityLog(String json) {
+            if (json == null || json.length() > MAX_EXPORT) return;
+            byte[] data = json.getBytes(StandardCharsets.UTF_8);
+            runOnUiThread(() -> {
+                if (!trustedPage() || !hasWindowFocus() || pendingExport != null) return;
+                if (data.length > MAX_EXPORT) {
+                    Toast.makeText(MainActivity.this, "Registro troppo grande per Android", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                intent.putExtra(Intent.EXTRA_TITLE, "nathion-attivita.json");
+                try {
+                    pendingExport = data;
+                    startActivityForResult(intent, SAVE_LOG);
+                } catch (ActivityNotFoundException e) {
+                    pendingExport = null;
+                    Toast.makeText(MainActivity.this, "Salvataggio file non disponibile", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
         @JavascriptInterface public void openSettings() {
             runOnUiThread(() -> {
-                if (web == null || web.getUrl() == null || !sameOrigin(Uri.parse(web.getUrl())) || !hasWindowFocus()) return;
+                if (!trustedPage() || !hasWindowFocus()) return;
                 new AlertDialog.Builder(MainActivity.this)
                     .setMessage("Aprire le impostazioni di Android?")
                     .setNegativeButton("Annulla", null)
                     .setPositiveButton("Apri", (dialog, which) -> startActivity(new Intent(Settings.ACTION_SETTINGS)))
                     .show();
             });
+        }
+    }
+
+    @Override protected void onActivityResult(int code, int result, Intent data) {
+        super.onActivityResult(code, result, data);
+        Uri uri = result == RESULT_OK && data != null ? data.getData() : null;
+        boolean document = uri != null && "content".equals(uri.getScheme()) && DocumentsContract.isDocumentUri(this, uri);
+        if (code == PICK_FILE && pendingFile != null) {
+            ValueCallback<Uri[]> callback = pendingFile;
+            pendingFile = null;
+            callback.onReceiveValue(document && trustedPage() ? new Uri[]{uri} : null);
+        } else if (code == SAVE_LOG) {
+            byte[] exported = pendingExport;
+            pendingExport = null;
+            if (!document || exported == null) return;
+            new Thread(() -> {
+                boolean saved = false;
+                try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+                    if (output != null) { output.write(exported); saved = true; }
+                } catch (Exception ignored) { saved = false; }
+                final boolean success = saved;
+                runOnUiThread(() -> Toast.makeText(this, success ? "Registro salvato" : "Salvataggio non riuscito", Toast.LENGTH_SHORT).show());
+            }, "nathion-export").start();
         }
     }
 
@@ -182,6 +270,8 @@ public class MainActivity extends Activity {
     }
 
     private void closeWeb() {
+        if (pendingFile != null) { pendingFile.onReceiveValue(null); pendingFile = null; }
+        pendingExport = null;
         if (pendingMicrophone != null) { pendingMicrophone.deny(); pendingMicrophone = null; }
         if (web != null) {
             web.stopLoading();

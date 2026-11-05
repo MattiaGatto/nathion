@@ -24,6 +24,7 @@ export function ChatWindow({
 }: Props) {
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [voiceFocus, setVoiceFocus] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [voiceDraft, setVoiceDraft] = useState<{ text: string }>();
 
@@ -72,11 +73,12 @@ export function ChatWindow({
   }
 
   const hasMessages = (conversation?.messages.length ?? 0) > 0;
+  const showHero = !hasMessages && !streaming && !error;
   const awaitingFirstChunk = streaming !== null && !streaming.done && streaming.content === "";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-nathion-border bg-nathion-bg/80 px-6 py-3 backdrop-blur">
+      <header className={voiceFocus ? "hidden" : "flex items-center justify-between gap-2 border-b border-nathion-border bg-nathion-bg/80 px-3 py-3 backdrop-blur sm:px-6"}>
         <div className="min-w-0">
           <h1 className="truncate text-sm font-medium text-nathion-text">
             {conversation?.title ?? "Nuova conversazione"}
@@ -85,7 +87,7 @@ export function ChatWindow({
         <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={onOpenSettings}
-            className="rounded-full border border-nathion-border bg-nathion-panel px-2.5 py-1 font-mono text-[11px] text-nathion-muted transition hover:border-nathion-accent-dim/40 hover:text-nathion-text"
+            className="max-w-[9rem] truncate rounded-full border border-nathion-border bg-nathion-panel px-2.5 py-1 font-mono text-[11px] text-nathion-muted transition hover:border-nathion-accent-dim/40 hover:text-nathion-text"
             title="Cambia modello nelle impostazioni"
           >
             {model ?? "nessun modello"}
@@ -94,9 +96,9 @@ export function ChatWindow({
         </div>
       </header>
 
-      <div ref={scrollRef} className={hasMessages || streaming || error ? "min-h-0 flex-1 overflow-y-auto" : "hidden"}>
+      <div ref={scrollRef} className={!voiceFocus && !showHero ? "min-h-0 flex-1 overflow-y-auto" : "hidden"}>
         {(hasMessages || streaming || error) && (
-          <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
+          <div className="mx-auto max-w-3xl space-y-4 px-3 py-4 sm:px-6 sm:py-6">
             {conversation?.messages.map((m) => <MessageBubble key={m.id} message={m} />)}
 
             {streaming && (!streaming.done || streaming.incomplete) && (
@@ -124,20 +126,26 @@ export function ChatWindow({
         )}
       </div>
 
-      <div className={hasMessages || streaming || error
-        ? "mx-auto w-full max-w-3xl shrink-0 px-4 sm:px-6"
-        : "flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-6 text-center"}>
-        {!hasMessages && !streaming && !error && <div className="mb-6">
+      <div className={voiceFocus || showHero
+        ? "flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 py-4 text-center sm:px-6"
+        : "mx-auto w-full max-w-3xl shrink-0 px-3 sm:px-6"}>
+        {voiceFocus && <div className="mb-4 flex w-full max-w-xl items-center justify-between gap-2 text-left">
+          <p className="font-mono text-xs uppercase tracking-widest text-sky-200">Modalità voce</p>
+          <button className="rounded-lg border border-nathion-border px-3 py-2 text-xs" onClick={() => setVoiceFocus(false)}>Mostra chat</button>
+        </div>}
+        {showHero && !voiceFocus && <div className="mt-auto" />}
+        {showHero && !voiceFocus && <div className="mb-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-nathion-accent">Assistente vocale</p>
           <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-5xl">Di cosa parliamo?</h2>
           <p className="mt-3 text-sm text-nathion-muted">Attiva l’ascolto, poi di’ «Ehi Nathion» e fai la tua domanda.</p>
         </div>}
         <div className="w-full max-w-xl">
-          <HandsFreeVoice hero={!hasMessages && !streaming && !error} model={model} connected={status === "open"} response={streaming?.incomplete ? null : streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
+          <HandsFreeVoice hero={voiceFocus || showHero} focused={voiceFocus} onFocus={() => setVoiceFocus(true)} model={model} connected={status === "open"} response={streaming?.incomplete ? null : streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
         </div>
+        {showHero && !voiceFocus && <div className="mb-auto" />}
       </div>
 
-      <div className="border-t border-nathion-border px-6 py-4">
+      <div className={voiceFocus ? "hidden" : "border-t border-nathion-border px-3 py-3 sm:px-6 sm:py-4"}>
         <div className="mx-auto max-w-3xl">
           {streaming && !streaming.done && <button className="mb-3 rounded-lg border border-nathion-border px-3 py-2 text-xs" onClick={cancel}>Interrompi risposta</button>}
           <details className="mb-3">

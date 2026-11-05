@@ -1,3 +1,4 @@
+import Markdown from "react-markdown";
 import { useEffect, useState, type FormEvent } from "react";
 import { workspaceRequest } from "../api/client";
 import { PasswordForm, useAccount } from "./AccessGate";
@@ -7,6 +8,7 @@ export interface Profile {
   last_name: string;
   address: string;
   avatar: string;
+  bio: string;
 }
 
 const fields = [
@@ -21,6 +23,7 @@ export function ProfilePanel({ onClose, onSaved }: { onClose: () => void; onSave
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingBio, setEditingBio] = useState(false);
 
   useEffect(() => {
     workspaceRequest<Profile>("auth/profile").then(setProfile).catch((e) => setError(e.message));
@@ -39,6 +42,7 @@ export function ProfilePanel({ onClose, onSaved }: { onClose: () => void; onSave
       });
       setProfile(saved);
       onSaved(saved);
+      setEditingBio(false);
       setNotice("Profilo salvato.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Salvataggio fallito.");
@@ -80,14 +84,14 @@ export function ProfilePanel({ onClose, onSaved }: { onClose: () => void; onSave
     }
   }
 
-  return <section aria-label="Profilo" className="absolute inset-0 z-30 overflow-auto bg-nathion-bg p-5">
+  return <section aria-label="Profilo" className="absolute inset-0 z-40 overflow-auto bg-nathion-bg p-4 sm:p-6">
     <div className="mx-auto max-w-lg space-y-6">
       <header className="flex items-start justify-between gap-4">
         <div><h2 className="text-2xl">Il mio profilo</h2><p className="text-nathion-muted">@{account?.username} · {account?.role === "admin" ? "Amministratore" : "Ospite"}</p></div>
         <button onClick={onClose}>Chiudi</button>
       </header>
       {profile && <form className="space-y-4 rounded-2xl border border-nathion-border bg-nathion-panel p-5" onSubmit={save}>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           {profile.avatar
             ? <img className="h-16 w-16 rounded-full object-cover" src={profile.avatar} alt="Foto profilo" />
             : <span aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full bg-nathion-accent/20 text-xl text-nathion-accent">{(profile.first_name || account?.username || "N").slice(0, 1).toUpperCase()}</span>}
@@ -105,6 +109,19 @@ export function ProfilePanel({ onClose, onSaved }: { onClose: () => void; onSave
             onChange={(event) => setProfile({ ...profile, [key]: event.target.value })}
             className="mt-1 w-full rounded-lg bg-nathion-bg p-3" />
         </label>)}
+        <section className="rounded-xl border border-sky-400/20 bg-sky-950/20 p-4" aria-label="Bio personale">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold text-sky-200">Bio personale</h3>
+            <button type="button" className="rounded-lg border border-nathion-border px-3 py-2 text-sm" onClick={() => setEditingBio(!editingBio)}>
+              {editingBio ? "Anteprima" : "Modifica bio"}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-nathion-muted">Il modello usa questa bio come contesto. Puoi descrivere progetti, preferenze e interessi in Markdown.</p>
+          {editingBio ? <textarea aria-label="Bio in Markdown" value={profile.bio} rows={7} maxLength={2400}
+            placeholder={"## Chi sono\n\n- Progetti\n- Preferenze"} onChange={(event) => setProfile({ ...profile, bio: event.target.value })}
+            className="mt-3 w-full rounded-lg bg-nathion-bg p-3 font-mono text-sm" />
+            : <div className="profile-markdown mt-3 text-sm"><Markdown skipHtml disallowedElements={["img"]}>{profile.bio || "*La tua bio è vuota.*"}</Markdown></div>}
+        </section>
         <button disabled={busy} className="rounded-lg bg-nathion-accent px-4 py-2 text-black">Salva profilo</button>
       </form>}
       {notice && <p role="status">{notice}</p>}

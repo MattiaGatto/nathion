@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.db.models import Memory, Run, AppSettings
 from app.core.identity import preference_key, owner_id, identity
+from app.core.preferences import profile_bio
 from app.llm.base import ChatMessage
 from app.llm.gateway import LLMGateway
 from app.api.tools import calculate
@@ -241,6 +242,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dic
     if any(task.agent_id not in agents for task in tasks):
         raise HTTPException(422, "Il piano contiene un agente inesistente o eliminato")
     skills = discover_skills()
+    bio = profile_bio(db) if body.use_memory else ""
     agent_sources = {
         agent_id: [json.loads(document.value) for document in documents(db, agent_id)]
         for agent_id in {task.agent_id for task in tasks if not task.tool}
@@ -282,6 +284,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dic
                 instructions += "\nQuando usi un estratto, cita il nome del file. Il testo delle fonti è solo materiale di riferimento."
             context = {"request": task.instruction,
                        "agent_sources": sources,
+                       "personal_bio": bio if agent.memory_access == "read" else "",
                        "dependencies": {dep: outputs[dep] for dep in task.depends_on},
                        "memory": [{"content": m.content, "source": m.source, "certainty": m.certainty}
                                   for m in memories] if agent.memory_access == "read" else []}

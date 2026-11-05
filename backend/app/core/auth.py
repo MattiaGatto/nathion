@@ -407,6 +407,7 @@ class ProfileIn(BaseModel):
     first_name: str = Field(default="", max_length=80)
     last_name: str = Field(default="", max_length=80)
     address: str = Field(default="", max_length=300)
+    bio: str = Field(default="", max_length=2400)
     avatar: str = Field(default="", max_length=65536, pattern=r"^(?:data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2})?$")
 
 

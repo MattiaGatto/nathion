@@ -130,27 +130,36 @@ function Application() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-nathion-bg bg-grid-fade">
+    <div className="flex h-[100dvh] overflow-hidden bg-nathion-bg bg-grid-fade">
       <Sidebar
         conversations={conversations}
         activeId={activeId}
         loading={conversationsLoading}
-        onSelect={setActiveId}
-        onNew={handleNewConversation}
+        onSelect={(id) => { setActiveId(id); if (window.innerWidth < 768) setSidebarCollapsed(true); }}
+        onNew={() => { void handleNewConversation(); if (window.innerWidth < 768) setSidebarCollapsed(true); }}
         onDelete={handleDeleteConversation}
-        onOpenSettings={() => { stopAllAudio(); setSettingsOpen(true); }}
-        onOpenAgents={() => { stopAllAudio(); setWorkspaceOpen(true); }}
+        onOpenSettings={() => { stopAllAudio(); if (window.innerWidth < 768) setSidebarCollapsed(true); setSettingsOpen(true); }}
+        onOpenAgents={() => { stopAllAudio(); if (window.innerWidth < 768) setSidebarCollapsed(true); setWorkspaceOpen(true); }}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
 
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-nathion-border/70 px-4 sm:px-7">
-          <div className="min-w-0">
-            <span className="block truncate text-sm font-semibold tracking-wide">NATHION</span>
-            <span className="hidden text-xs text-nathion-muted sm:block">Assistente vocale</span>
+        <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-nathion-border/70 px-3 sm:px-7">
+          <div className="flex min-w-0 items-center gap-2">
+            <button type="button" className="grid h-10 w-9 shrink-0 place-items-center rounded-lg text-sky-200 md:hidden"
+              aria-label="Apri cronologia chat" aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h11" />
+              </svg>
+            </button>
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-semibold tracking-wide">NATHION</span>
+              <span className="hidden text-xs text-nathion-muted sm:block">Assistente vocale</span>
+            </div>
           </div>
-          <div className="flex items-center gap-3 sm:gap-5">
+          <div className="flex items-center gap-2 sm:gap-5">
+            <button className="rounded-lg px-2 py-2 text-xs text-nathion-muted hover:text-nathion-text" onClick={() => { stopAllAudio(); setSettingsOpen(true); }}>Impostazioni</button>
             <button className="text-xs text-nathion-muted hover:text-nathion-text" onClick={() => { stopAllAudio(); setWorkspaceOpen(true); }}>Agenti</button>
             <button aria-label="Apri profilo" title="Apri profilo" className="flex items-center gap-2 rounded-full border border-nathion-border bg-nathion-panel px-2 py-1 text-sm hover:border-nathion-accent" onClick={() => { stopAllAudio(); setProfileOpen(true); }}>
               {profile?.avatar
@@ -179,6 +188,7 @@ function Application() {
         onClose={() => setSettingsOpen(false)}
         currentModel={model}
         onModelSaved={setModel}
+        onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }}
       />
     </div>
   );

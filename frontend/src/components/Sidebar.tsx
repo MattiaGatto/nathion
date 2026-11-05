@@ -43,7 +43,7 @@ export function Sidebar({
 
   if (collapsed) {
     return (
-      <aside className="flex h-full w-14 flex-col items-center gap-3 border-r border-nathion-border bg-nathion-surface py-4">
+      <aside className="hidden h-full w-14 flex-col md:flex items-center gap-3 border-r border-nathion-border bg-nathion-surface py-4">
         <button
           onClick={onToggleCollapsed}
           className="rounded-lg p-2 text-nathion-muted transition hover:bg-nathion-panel hover:text-nathion-text"
@@ -63,7 +63,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-nathion-border bg-nathion-surface">
+    <aside className="absolute inset-y-0 left-0 z-50 flex h-full w-[min(18rem,86vw)] shrink-0 flex-col border-r border-nathion-border bg-nathion-surface shadow-panel md:static md:w-72">
       <div className="flex items-center justify-between px-4 py-4">
         <BrandWordmark />
         <button

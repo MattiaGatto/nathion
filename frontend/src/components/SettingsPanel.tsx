@@ -4,6 +4,7 @@ import { api, type ModelInfo } from "../api/client";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onOpenProfile: () => void;
   currentModel: string | null;
   onModelSaved: (model: string) => void;
 }
@@ -14,7 +15,7 @@ interface Props {
  * preferenza di default lato server, cosi' sopravvive a un refresh o a
  * una nuova sessione (requisito §3.5 "Persistenza").
  */
-export function SettingsPanel({ open, onClose, currentModel, onModelSaved }: Props) {
+export function SettingsPanel({ open, onClose, onOpenProfile, currentModel, onModelSaved }: Props) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(currentModel);
   const [loading, setLoading] = useState(true);
@@ -72,12 +73,12 @@ export function SettingsPanel({ open, onClose, currentModel, onModelSaved }: Pro
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md animate-fade-in-up rounded-2xl border border-nathion-border bg-nathion-panel p-6 shadow-panel"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto animate-fade-in-up rounded-2xl border border-nathion-border bg-nathion-panel p-6 shadow-panel"
       >
         <div className="mb-5 flex items-start justify-between">
           <div>
@@ -94,6 +95,10 @@ export function SettingsPanel({ open, onClose, currentModel, onModelSaved }: Pro
           </button>
         </div>
 
+        <button type="button" onClick={onOpenProfile} className="mb-5 flex w-full items-center justify-between gap-3 rounded-xl border border-sky-400/25 bg-sky-400/10 p-3 text-left">
+          <span><strong className="block text-sm text-sky-200">Modifica profilo</strong><small className="text-nathion-muted">Avatar, dati personali e bio</small></span>
+          <span aria-hidden="true">→</span>
+        </button>
         <div className="space-y-4">
           <div>
             <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-nathion-muted">

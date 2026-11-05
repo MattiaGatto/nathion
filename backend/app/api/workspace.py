@@ -5,6 +5,7 @@ import json
 import asyncio
 import hashlib
 import re
+from datetime import timezone
 from pathlib import PurePath
 from threading import Lock
 from uuid import uuid4
@@ -236,12 +237,17 @@ async def reindex(db: Session = Depends(get_db)):
 
 def run_out(row):
     return {"id": row.id, "prompt": row.prompt, "status": row.status,
-            "result": row.result, "trace": json.loads(row.trace), "created_at": row.created_at}
+            "result": row.result, "trace": json.loads(row.trace), "created_at": row.created_at.replace(tzinfo=row.created_at.tzinfo or timezone.utc).isoformat()}
 
 
 @router.get("/runs")
 def runs(db: Session = Depends(get_db)):
     return [run_out(row) for row in db.query(Run).order_by(Run.created_at.desc()).limit(30)]
+
+
+@router.get("/runs/log")
+def run_log(db: Session = Depends(get_db)):
+    return [run_out(row) for row in db.query(Run).order_by(Run.created_at.desc())]
 
 
 @router.get("/runs/{run_id}")

@@ -238,3 +238,18 @@
   font-weight: 650;
   overflow-wrap: anywhere;
 }
+
+.profile-markdown {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.profile-markdown > * + * { margin-top: .65rem; }
+.profile-markdown :is(h1, h2, h3, h4, h5, h6) { color: #aee9fb; font-size: 1.1rem; font-weight: 650; }
+.profile-markdown :is(ul, ol) { padding-inline-start: 1.35rem; }
+.profile-markdown ul { list-style: disc; }
+.profile-markdown ol { list-style: decimal; }
+.profile-markdown blockquote { border-inline-start: 2px solid #4dabc5; padding-inline-start: .8rem; color: #b8cad6; }
+.profile-markdown a { color: #aee9fb; text-decoration: underline; }
+.profile-markdown pre { overflow-x: auto; padding: .6rem; border-radius: .4rem; background: #0a1420; }
+.profile-markdown code { color: #c3f4e6; }

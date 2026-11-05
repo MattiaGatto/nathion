@@ -4,7 +4,7 @@ import { api, workspaceRequest } from "../api/client";
 import { claimAudio, releaseAudio } from "../audioOwner";
 import { TurnDetector, wavAudio, nextPhrase } from "../voiceSession";
 
-interface Props { hero?: boolean; model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
+interface Props { hero?: boolean; focused: boolean; onFocus: () => void; model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
 const pcCommands = [
   { pattern: /^apri (?:la )?calcolatrice(?: sul pc)?[.!]?$/i, tool: "open_calculator", label: "Apri Calcolatrice sul PC" },
   { pattern: /^apri (?:il )?blocco note(?: sul pc)?[.!]?$/i, tool: "open_notepad", label: "Apri Blocco note sul PC" },
@@ -156,8 +156,9 @@ export function HandsFreeVoice(props: Props) {
     }
   }
 
-  async function start() {
-    stop(); setAgentTurn(null); setActionResult(""); waitingForWake.current = wakeEnabled; transcriptReceived.current = false; setMicrophoneLevel(0); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
+  async function start(resume = false) {
+    latest.current.onFocus();
+    stop(); setAgentTurn(null); setActionResult(""); waitingForWake.current = wakeEnabled && !resume; transcriptReceived.current = false; setMicrophoneLevel(0); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
     claimAudio(owner.current, stop); running.current = true; setActive(true);
     const current = generation.current;
     let input: MediaStream | null = null;
@@ -327,7 +328,7 @@ export function HandsFreeVoice(props: Props) {
       stop();
       latest.current.onInterrupt();
     } else {
-      void start();
+      void start(props.focused);
     }
   }
 
@@ -349,7 +350,7 @@ export function HandsFreeVoice(props: Props) {
       <div className="voice-console__display">
         <button
           className="voice-orb"
-          aria-label={active ? "Ferma il microfono" : "Attiva ascolto vocale"}
+          aria-label={active ? "Ferma il microfono" : props.focused ? "Continua a parlare" : "Attiva ascolto vocale"}
           aria-pressed={active}
           disabled={!props.connected && !active}
           onClick={toggleSession}
@@ -381,9 +382,18 @@ export function HandsFreeVoice(props: Props) {
             {agentTurn.name ? `Agente · ${agentTurn.name}` : "Modalità agenti"}
           </p>}
           <p className="voice-console__phase">{phaseLabel}</p>
-          <p className="voice-console__status" role="status">{status || "Attiva ascolto"}</p>
+          <p className="voice-console__status" role="status">{status || (props.focused ? "Tocca per continuare a parlare" : "Attiva ascolto")}</p>
         </div>
       </div>
+      {props.focused && phase === "speaking" && <button type="button" className="mx-auto rounded-lg border border-sky-400/30 px-4 py-2 text-sm text-sky-100"
+        onClick={() => {
+          expected.current = false;
+          stopPlayback();
+          latest.current.onInterrupt();
+          setStatus("Ti ascolto…");
+          resetIdle();
+        }}>Tocca per parlare</button>}
+      {props.focused && !active && status && <p className="text-nathion-muted">Tocca il microfono per continuare a parlare.</p>}
       <details className="space-y-2">
         <summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary>
         <p className="text-nathion-muted">In attesa della parola chiave, il microfono resta attivo nella pagina. L’audio viene trascritto sul PC. Dopo l’attivazione, la sessione termina dopo 20 secondi di inattività.</p>
@@ -414,6 +424,9 @@ export function HandsFreeVoice(props: Props) {
           <button disabled={pcBusy} onClick={() => void decidePC(false)}>Annulla azione</button>
         </div>
       </div>}
+      {props.focused && !agentTurn && transcriptReceived.current && props.response?.content && (
+        <p className="max-h-52 overflow-auto whitespace-pre-wrap rounded-lg border border-sky-400/25 bg-sky-400/10 p-3 text-left text-sm">{props.response.content}</p>
+      )}
       {actionResult && <div role="status" className={agentTurn
         ? "max-h-48 overflow-auto rounded-lg border border-violet-400/25 bg-violet-400/10 p-3 text-sm"
         : "max-h-36 overflow-auto"}>
