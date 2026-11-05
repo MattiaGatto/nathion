@@ -27,7 +27,13 @@ export function HandsFreeVoice(props: Props) {
   const cursor = useRef(0);
   const playbackGeneration = useRef(0);
   const idleTimeout = useRef<number>();
-  function resetIdle() { clearTimeout(idleTimeout.current); idleTimeout.current = window.setTimeout(stop, 120000); }
+  function resetIdle() {
+    clearTimeout(idleTimeout.current);
+    idleTimeout.current = window.setTimeout(() => {
+      stop();
+      setStatus("Sessione terminata dopo 20 secondi di silenzio.");
+    }, 20_000);
+  }
 
   function stopPlayback() {
     playbackGeneration.current++;
@@ -93,7 +99,7 @@ export function HandsFreeVoice(props: Props) {
 
   async function start() {
     stop(); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
-    claimAudio(owner.current, stop); running.current = true; setActive(true); resetIdle();
+    claimAudio(owner.current, stop); running.current = true; setActive(true);
     const current = generation.current;
     let input: MediaStream | null = null;
     let context: AudioContext | null = null;
@@ -113,7 +119,7 @@ export function HandsFreeVoice(props: Props) {
       resources.current = { input, context, capture };
       const detector = new TurnDetector();
       let preRoll: Float32Array[] = [], frames: Float32Array[] = [];
-      let processing = false, idleFor = 0;
+      let processing = false;
       const rate = context.sampleRate;
       capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
         if (!running.current || current !== generation.current || processing) return;
@@ -125,15 +131,15 @@ export function HandsFreeVoice(props: Props) {
         if (!detector.speaking) {
           preRoll.push(frame);
           while (preRoll.length * milliseconds > 500) preRoll.shift();
-          idleFor += milliseconds;
-          if (idleFor > 120000) { stop(); return; }
         } else frames.push(frame);
         const action = detector.feed(rms, milliseconds, thresholdRef.current);
         if (action === "start") {
-          resetIdle(); idleFor = 0; frames = [...preRoll]; preRoll = [];
+          clearTimeout(idleTimeout.current);
+          frames = [...preRoll]; preRoll = [];
           if (speakingBack) { expected.current = false; stopPlayback(); latest.current.onInterrupt(); }
           setStatus("Ti ascolto · termina la frase con una pausa…");
         } else if (action === "end") {
+          resetIdle();
           const recording = frames; frames = []; preRoll = []; processing = true; setStatus("Trascrizione locale…");
           const abort = new AbortController(); controller.current = abort;
           api.transcribe(wavAudio(recording, rate), abort.signal).then(({ text }) => {
@@ -149,11 +155,12 @@ export function HandsFreeVoice(props: Props) {
         }
       };
       input.getTracks().forEach((track) => { track.onended = () => { if (running.current) fail(new Error("Il dispositivo ha interrotto il microfono")); }; });
+      resetIdle();
       setStatus("Ti ascolto…");
     } catch (e) {
       if (resources.current?.context !== context) { input?.getTracks().forEach((track) => track.stop()); void context?.close().catch(() => {}); }
       if (current === generation.current) fail(e);
     }
   }
-  return <section className="mb-3 space-y-2 rounded-lg border border-nathion-border p-3 text-xs" aria-label="Conversazione vocale"><div className="flex flex-wrap items-center gap-3"><button className="rounded-lg border border-nathion-border px-3 py-2 disabled:opacity-40" disabled={!props.connected && !active} onClick={() => active ? (stop(), latest.current.onInterrupt()) : void start()}>{active ? "Termina conversazione vocale" : "Avvia conversazione vocale"}</button><span role="status">{status}</span></div><p className="text-nathion-muted">Le frasi vengono inviate dopo una pausa, solo durante la sessione attiva.</p><details><summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary><p className="my-2 text-nathion-muted">La sessione termina quando lasci la pagina o dopo due minuti senza parlare.</p><label><input type="checkbox" checked={bargeIn} onChange={(e) => setBargeIn(e.target.checked)} /> Interrompi parlando (usa cuffie per evitare l’eco)</label><label className="ml-3">Soglia microfono <input aria-label="Soglia microfono" type="range" min={0.008} max={0.08} step={0.002} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} /></label></details>{transcript && <p aria-label="Ultima frase riconosciuta">Tu: {transcript}</p>}{error && <p role="alert" className="text-red-300">{error}</p>}</section>;
+  return <section className="mb-3 space-y-2 rounded-lg border border-nathion-border p-3 text-xs" aria-label="Conversazione vocale"><div className="flex flex-wrap items-center gap-3"><button className="rounded-lg border border-nathion-border px-3 py-2 disabled:opacity-40" disabled={!props.connected && !active} onClick={() => active ? (stop(), latest.current.onInterrupt()) : void start()}>{active ? "Termina conversazione vocale" : "Avvia conversazione vocale"}</button><span role="status">{status}</span></div><p className="text-nathion-muted">Le frasi vengono inviate dopo una pausa, solo durante la sessione attiva.</p><details><summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary><p className="my-2 text-nathion-muted">La sessione termina quando lasci la pagina o dopo 20 secondi senza parlare.</p><label><input type="checkbox" checked={bargeIn} onChange={(e) => setBargeIn(e.target.checked)} /> Interrompi parlando (usa cuffie per evitare l’eco)</label><label className="ml-3">Soglia microfono <input aria-label="Soglia microfono" type="range" min={0.008} max={0.08} step={0.002} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} /></label></details>{transcript && <p aria-label="Ultima frase riconosciuta">Tu: {transcript}</p>}{error && <p role="alert" className="text-red-300">{error}</p>}</section>;
 }
