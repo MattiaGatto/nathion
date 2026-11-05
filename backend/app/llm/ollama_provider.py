@@ -66,6 +66,9 @@ class OllamaProvider(LLMProvider):
             "options": self._options,
         }
 
+        if model.startswith(("qwen3:", "qwen3.5:")):
+            body["think"] = False
+
         if response_format is not None:
             body["format"] = response_format
             body["options"] = {**self._options, "temperature": 0}

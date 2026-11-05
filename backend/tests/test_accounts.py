@@ -323,3 +323,18 @@ def test_manual_sqlite_backup_is_consistent_and_separate(tmp_path, monkeypatch, 
     with sqlite3.connect(backup) as connection:
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert connection.execute("SELECT value FROM example").fetchone()[0] == "retained"
+
+
+def test_personal_profile_is_private_and_exportable(accounts):
+    client, _, headers, admin = accounts
+    alice = headers("alice")
+    bob = headers("bob")
+    assert client.get("/api/auth/profile").status_code == 401
+    assert client.put("/api/auth/profile", headers=alice, json={"address": "x" * 301}).status_code == 422
+    data = {"first_name": "Alice", "last_name": "Rossi", "address": "Indirizzo di prova"}
+    assert client.put("/api/auth/profile", headers=alice, json=data).json() == data
+    assert client.get("/api/auth/profile", headers=alice).json() == data
+    assert client.get("/api/auth/profile", headers=bob).json()["address"] == ""
+    assert client.get("/api/auth/profile", headers=admin).json()["address"] == ""
+    exported = client.get("/api/export", headers=alice).json()["preferences"]
+    assert json.loads(next(row["value"] for row in exported if row["key"] == "personal_profile")) == data

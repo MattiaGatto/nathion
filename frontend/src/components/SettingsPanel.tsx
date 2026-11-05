@@ -136,7 +136,7 @@ export function SettingsPanel({ open, onClose, currentModel, onModelSaved }: Pro
               >
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.label}
+                    {m.label}{m.id === "llama3.2:3b" ? " · Voce rapida" : m.id === "qwen3.5:4b" ? " · Modello multimodale" : ""}
                   </option>
                 ))}
               </select>

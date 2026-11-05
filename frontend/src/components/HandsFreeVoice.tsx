@@ -1,10 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api/client";
+import { useAccount } from "./AccessGate";
+import { api, workspaceRequest } from "../api/client";
 import { claimAudio, releaseAudio } from "../audioOwner";
 import { TurnDetector, wavAudio, nextPhrase } from "../voiceSession";
 
-interface Props { connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
+interface Props { model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
+const pcCommands = [
+  { pattern: /^apri (?:la )?calcolatrice(?: sul pc)?[.!]?$/i, tool: "open_calculator", label: "Apri Calcolatrice sul PC" },
+  { pattern: /^apri (?:il )?blocco note(?: sul pc)?[.!]?$/i, tool: "open_notepad", label: "Apri Blocco note sul PC" },
+  { pattern: /^(?:mostra (?:lo )?)?stato del pc[.!]?$/i, tool: "pc_status", label: "Leggi lo stato del PC" },
+];
+
 export function HandsFreeVoice(props: Props) {
+  const canControlPC = useAccount()?.role === "admin";
+  const [pcAction, setPcAction] = useState<{ id: string; label: string } | null>(null);
+  const [pcBusy, setPcBusy] = useState(false);
+  const [actionResult, setActionResult] = useState("");
+  const pendingPC = useRef(false);
   const latest = useRef(props); latest.current = props;
   const [active, setActive] = useState(false);
   const [status, setStatus] = useState("");
@@ -13,6 +25,12 @@ export function HandsFreeVoice(props: Props) {
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
   const [bargeIn, setBargeIn] = useState(false);
   const interruptible = useRef(false); interruptible.current = bargeIn;
+  const [wakeEnabled, setWakeEnabled] = useState(false);
+  const [voiceProfile, setVoiceProfile] = useState("default");
+  const [profiles, setProfiles] = useState<string[]>(["default"]);
+  const selectedVoice = useRef(voiceProfile);
+  selectedVoice.current = voiceProfile;
+  const waitingForWake = useRef(false);
   const [threshold, setThreshold] = useState(0.018);
   const thresholdRef = useRef(threshold); thresholdRef.current = threshold;
   const owner = useRef(Symbol("conversation"));
@@ -33,10 +51,12 @@ export function HandsFreeVoice(props: Props) {
     clearTimeout(idleTimeout.current);
     idleTimeout.current = window.setTimeout(() => {
       stop();
-      setStatus(transcriptReceived.current
+      setStatus(waitingForWake.current
+        ? "Attivazione vocale disarmata dopo due minuti."
+        : transcriptReceived.current
         ? "Microfono chiuso dopo 20 secondi di inattività."
         : "Microfono chiuso dopo 20 secondi. Nessuna frase riconosciuta.");
-    }, 20_000);
+    }, waitingForWake.current ? 120_000 : 20_000);
   }
 
   function stopPlayback() {
@@ -59,7 +79,8 @@ export function HandsFreeVoice(props: Props) {
   useEffect(() => {
     const hidden = () => { if (document.hidden) stop(); };
     document.addEventListener("visibilitychange", hidden);
-    return () => { document.removeEventListener("visibilitychange", hidden); stop(); };
+    window.addEventListener("nathion-background", stop);
+    return () => { document.removeEventListener("visibilitychange", hidden); window.removeEventListener("nathion-background", stop); stop(); };
   }, []);
   useEffect(() => { if (!props.connected) stop(); }, [props.connected]);
 
@@ -77,7 +98,7 @@ export function HandsFreeVoice(props: Props) {
     try {
       setStatus("Preparazione voce…");
       const abort = new AbortController(); controller.current = abort;
-      const blob = await api.speak(queue.current.shift()!, abort.signal);
+      const blob = await api.speak(queue.current.shift()!, abort.signal, selectedVoice.current);
       if (!running.current || current !== playbackGeneration.current) return;
       audioUrl.current = URL.createObjectURL(blob);
       const player = new Audio(audioUrl.current); audio.current = player;
@@ -108,8 +129,33 @@ export function HandsFreeVoice(props: Props) {
     void playQueue();
   }, [props.response]);
 
+  async function decidePC(approve: boolean) {
+    if (!pcAction || pcBusy) return;
+    setPcBusy(true);
+    setActionResult("");
+    try {
+      const result = await workspaceRequest<{ status: string; result?: string }>(
+        `tools/actions/${pcAction.id}/${approve ? "approve" : "reject"}`, { method: "POST" },
+      );
+      setPcAction(null);
+      pendingPC.current = false;
+      const details = result.result ? JSON.parse(result.result) : {};
+      const message = details.text ?? details.detail ?? (approve ? "Esito non disponibile." : "Azione annullata.");
+      setActionResult(message);
+      if (running.current && approve && result.status === "completed") {
+        clearTimeout(idleTimeout.current);
+        queue.current.push(message);
+        void playQueue();
+      }
+    } catch (e) {
+      setActionResult(e instanceof Error ? e.message : "Operazione non riuscita.");
+    } finally {
+      setPcBusy(false);
+    }
+  }
+
   async function start() {
-    stop(); transcriptReceived.current = false; setMicrophoneLevel(0); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
+    stop(); waitingForWake.current = wakeEnabled; transcriptReceived.current = false; setMicrophoneLevel(0); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
     claimAudio(owner.current, stop); running.current = true; setActive(true);
     const current = generation.current;
     let input: MediaStream | null = null;
@@ -119,6 +165,7 @@ export function HandsFreeVoice(props: Props) {
       const availability = await api.voiceStatus();
       if (!availability.enabled || !availability.whisper_model_present || !availability.piper_model_present) throw new Error("Motore vocale non pronto. Controlla i modelli locali.");
       if (!running.current || current !== generation.current) return;
+      setProfiles(availability.profiles);
       input = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
       context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule("/voice-capture.js");
@@ -158,9 +205,83 @@ export function HandsFreeVoice(props: Props) {
         } else if (action === "end") {
           const recording = frames; frames = []; preRoll = []; processing = true; setStatus("Trascrizione locale…");
           const abort = new AbortController(); controller.current = abort;
-          api.transcribe(wavAudio(recording, rate), abort.signal).then(({ text }) => {
+          api.transcribe(wavAudio(recording, rate), abort.signal).then(({ text: recognized }) => {
             if (!running.current || current !== generation.current) return;
+            let text = recognized.trim();
+            if (waitingForWake.current) {
+              const wake = /^(?:(?:ehi|hey|ei|ciao)[,\s]+)?(?:nathion|nation|nazione)\b[\s,.!?:-]*/iu.exec(text);
+              if (!wake) {
+                setStatus("In attesa di «Ehi Nathion»…");
+                resetIdle();
+                return;
+              }
+              waitingForWake.current = false;
+              text = text.slice(wake[0].length).trim();
+              if (!text) {
+                setStatus("NATHION attivo. Dimmi pure.");
+                resetIdle();
+                return;
+              }
+            }
             setTranscript(text);
+            const phone = (window as Window & { NathionPhone?: { openSettings: () => void } }).NathionPhone;
+            if (phone && /^apri (?:le )?impostazioni (?:del telefono|di android)[.!]?$/i.test(text)) {
+              phone.openSettings();
+              setStatus("Conferma sul telefono per aprire le impostazioni.");
+              resetIdle();
+              return;
+            }
+            const delegation = /^(?:chiedi agli agenti|fai lavorare gli agenti)[\s,:]+(.+)$/iu.exec(text);
+            if (delegation && latest.current.model) {
+              setActionResult("");
+              setStatus("Gli agenti stanno elaborando la richiesta…");
+              return workspaceRequest<{ status: string; result: string }>("runs", {
+                method: "POST",
+                signal: abort.signal,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: delegation[1], model: latest.current.model }),
+              }).then((run) => {
+                if (!running.current || current !== generation.current) return;
+                if (run.status !== "completed") {
+                  setActionResult("Attività interrotta. Apri Agenti per vedere l’esito.");
+                  resetIdle();
+                  return;
+                }
+                setActionResult(run.result);
+                let remaining = run.result;
+                for (let count = 0; count < 20; count++) {
+                  const part = nextPhrase(remaining, true);
+                  if (!part) break;
+                  queue.current.push(part.phrase);
+                  remaining = remaining.slice(part.consumed);
+                }
+                void playQueue();
+              });
+            }
+            const command = canControlPC && pcCommands.find((item) => item.pattern.test(text));
+            if (command) {
+              if (pendingPC.current) {
+                setStatus("C’è già un’azione PC da approvare o annullare.");
+                resetIdle();
+                return;
+              }
+              pendingPC.current = true;
+              setStatus("Preparo la richiesta per il PC…");
+              return workspaceRequest<{ id: string }>("tools/execute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tool: "mcp", server: "pc", remote_tool: command.tool, arguments: {} }),
+              }).then((action) => {
+                setPcAction({ id: action.id, label: command.label });
+                if (running.current && current === generation.current) {
+                  setStatus("Richiesta pronta. Conferma per eseguirla.");
+                  resetIdle();
+                }
+              }).catch((e) => {
+                pendingPC.current = false;
+                throw e;
+              });
+            }
             if (text.trim()) {
               transcriptReceived.current = true;
               cursor.current = 0; expected.current = true;
@@ -176,12 +297,71 @@ export function HandsFreeVoice(props: Props) {
       };
       input.getTracks().forEach((track) => { track.onended = () => { if (running.current) fail(new Error("Il dispositivo ha interrotto il microfono")); }; });
       resetIdle();
-      setStatus("Ti ascolto…");
+      setStatus(waitingForWake.current ? "In attesa di «Ehi Nathion»…" : "Ti ascolto…");
     } catch (e) {
       if (resources.current?.context !== context) { input?.getTracks().forEach((track) => track.stop()); void context?.close().catch(() => {}); }
       if (current === generation.current) fail(e);
     }
   }
-  return <section className="mb-3 space-y-2 rounded-lg border border-nathion-border p-3 text-xs" aria-label="Conversazione vocale"><div className="flex flex-wrap items-center gap-3"><button className="rounded-lg border border-nathion-border px-3 py-2 disabled:opacity-40" disabled={!props.connected && !active} onClick={() => active ? (stop(), latest.current.onInterrupt()) : void start()}>{active ? "Termina conversazione vocale" : "Avvia conversazione vocale"}</button><span role="status">{status}</span></div><p className="text-nathion-muted">Le frasi vengono inviate dopo una pausa, solo durante la sessione attiva.</p><details><summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary><p className="my-2 text-nathion-muted">La sessione termina quando lasci la pagina o dopo 20 secondi in ascolto senza parlare. La trascrizione e la risposta hanno il tempo di completarsi.</p><label><input type="checkbox" checked={bargeIn} onChange={(e) => setBargeIn(e.target.checked)} /> Interrompi parlando (usa cuffie per evitare l’eco)</label><label className="ml-3">Soglia microfono <input aria-label="Soglia microfono" type="range" min={0.008} max={0.08} step={0.002} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} /></label></details>{active && <label className="flex items-center gap-2 text-nathion-muted">Segnale microfono<meter min={0} max={Math.max(0.08, microphoneLevel)} low={threshold} value={microphoneLevel} /></label>}
-    {transcript && <p aria-live="polite" aria-label="Ultima frase riconosciuta">Tu: {transcript}</p>}{error && <p role="alert" className="text-red-300">{error}</p>}</section>;
+  function toggleSession() {
+    if (active) {
+      stop();
+      latest.current.onInterrupt();
+    } else {
+      void start();
+    }
+  }
+
+  return (
+    <section className="mb-3 space-y-3 rounded-xl border border-nathion-border p-3 text-xs" aria-label="Conversazione vocale">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          className={active
+            ? "rounded-lg border border-nathion-border px-4 py-3 text-sm"
+            : "rounded-lg bg-nathion-accent px-4 py-3 text-sm font-medium text-nathion-bg disabled:opacity-40"}
+          disabled={!props.connected && !active}
+          onClick={toggleSession}
+        >
+          {active ? "Termina conversazione vocale" : "Parla con NATHION"}
+        </button>
+        <span role="status">{status}</span>
+      </div>
+      <details className="space-y-2">
+        <summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary>
+        <p className="text-nathion-muted">Il microfono si chiude dopo 20 secondi di inattività. La risposta in corso può terminare.</p>
+        <label className="block">
+          <input type="checkbox" disabled={active} checked={wakeEnabled} onChange={(e) => setWakeEnabled(e.target.checked)} />
+          {" "}Attiva con «Ehi Nathion» mentre l’app è aperta
+        </label>
+        <label className="block">
+          Voce{" "}
+          <select className="rounded bg-nathion-panel p-1" value={voiceProfile} onChange={(e) => setVoiceProfile(e.target.value)}>
+            {profiles.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <input type="checkbox" checked={bargeIn} onChange={(e) => setBargeIn(e.target.checked)} />
+          {" "}Interrompi parlando (usa cuffie per evitare l’eco)
+        </label>
+        <label className="flex items-center gap-2">
+          Soglia microfono
+          <input type="range" min={0.008} max={0.08} step={0.002} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
+        </label>
+      </details>
+      {active && <label className="flex items-center gap-2 text-nathion-muted">
+        Segnale microfono
+        <meter min={0} max={Math.max(0.08, microphoneLevel)} low={threshold} value={microphoneLevel} />
+      </label>}
+      {transcript && <p aria-live="polite" aria-label="Ultima frase riconosciuta">Tu: {transcript}</p>}
+      {pcAction && <div className="space-y-2 rounded-lg border border-nathion-border p-3">
+        <p>{pcAction.label}</p>
+        <div className="flex gap-3">
+          <button disabled={pcBusy} onClick={() => void decidePC(true)}>Approva ed esegui</button>
+          <button disabled={pcBusy} onClick={() => void decidePC(false)}>Annulla azione</button>
+        </div>
+      </div>}
+      {actionResult && <p role="status" className="max-h-36 overflow-auto whitespace-pre-wrap">{actionResult}</p>}
+      {error && <p role="alert" className="text-red-300">{error}</p>}
+    </section>
+  );
 }

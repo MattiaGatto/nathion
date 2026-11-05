@@ -22,3 +22,7 @@ frontend/.vite/
 .npm-cache/
 models/
 build/
+
+# Android local SDK and signing files
+android/.tools/
+android/.signing/

@@ -44,7 +44,7 @@ export function ChatWindow({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [conversation, streaming]);
 
-  function handleSend(text: string) {
+  function handleSend(text: string, voice = false) {
     if (!conversation || status !== "open" || (streaming && !streaming.done)) return false;
 
     const optimisticUser: MessageOut = {
@@ -59,7 +59,7 @@ export function ChatWindow({
         .getConversation(conversationId)
         .then(setConversation)
         .finally(onConversationUpdated);
-    });
+    }, voice);
     if (accepted) setConversation((prev) => prev && { ...prev, messages: [...prev.messages, optimisticUser] });
     return accepted;
   }
@@ -130,7 +130,7 @@ export function ChatWindow({
       <div className="border-t border-nathion-border px-6 py-4">
         <div className="mx-auto max-w-3xl">
           {streaming && !streaming.done && <button className="mb-3 rounded-lg border border-nathion-border px-3 py-2 text-xs" onClick={cancel}>Interrompi risposta</button>}
-          <HandsFreeVoice connected={status === "open"} response={streaming?.incomplete ? null : streaming} onSend={handleSend} onInterrupt={cancel} />
+          <HandsFreeVoice model={model} connected={status === "open"} response={streaming?.incomplete ? null : streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
           <VoiceControls key={conversationId} disabled={status !== "open" || Boolean(streaming && !streaming.done)}
             onTranscript={(text) => setVoiceDraft({ text })}
             reply={conversation?.messages.filter((m) => m.role === "assistant").at(-1)?.content ?? ""} />

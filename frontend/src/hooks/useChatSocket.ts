@@ -77,7 +77,7 @@ export function useChatSocket(conversationId: string | null, model: string | nul
     };
   }, [conversationId, model]);
 
-  const sendMessage = useCallback((text: string, onDone?: () => void) => {
+  const sendMessage = useCallback((text: string, onDone?: () => void, voice = false) => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
       setError("Connessione non ancora pronta, riprova tra un istante.");
       return false;
@@ -87,7 +87,7 @@ export function useChatSocket(conversationId: string | null, model: string | nul
     setError(null);
     setStreaming({ content: "", done: false });
     onDoneRef.current = onDone ?? null;
-    socketRef.current.send(JSON.stringify({ type: "message", content: text }));
+    socketRef.current.send(JSON.stringify({ type: "message", content: text, voice }));
     return true;
   }, []);
 

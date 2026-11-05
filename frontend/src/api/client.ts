@@ -64,10 +64,10 @@ export const api = {
     fetch(`${API_BASE_URL}/api/voice/transcribe`, {
       method: "POST", headers: { "Content-Type": audio.type }, body: audio, signal,
     }).then((r) => handle<{ text: string }>(r)),
-  speak: async (text: string, signal?: AbortSignal) => {
+  speak: async (text: string, signal?: AbortSignal, profile = "default") => {
     const response = await fetch(`${API_BASE_URL}/api/voice/speak`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }), signal,
+      body: JSON.stringify({ text, profile }), signal,
     });
     if (!response.ok) { await handle<never>(response); }
     return response.blob();

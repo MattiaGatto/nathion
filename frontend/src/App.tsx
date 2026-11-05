@@ -2,11 +2,11 @@ import { stopAllAudio } from "./audioOwner";
 import { useCallback, useEffect, useState } from "react";
 import { api, type ConversationSummary } from "./api/client";
 import { ChatWindow } from "./components/ChatWindow";
+import { ProfilePanel } from "./components/ProfilePanel";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { AccessGate, useAccount } from "./components/AccessGate";
-import { workspaceRequest } from "./api/client";
 
 export default function App() {
   return <AccessGate><Application /></AccessGate>;
@@ -22,6 +22,7 @@ function Application() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [bootError, setBootError] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const refreshConversations = useCallback(async () => {
     const list = await api.listConversations();
@@ -128,13 +129,15 @@ function Application() {
         onNew={handleNewConversation}
         onDelete={handleDeleteConversation}
         onOpenSettings={() => { stopAllAudio(); setSettingsOpen(true); }}
+        onOpenAgents={() => { stopAllAudio(); setWorkspaceOpen(true); }}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
 
       <main className="relative min-w-0 flex-1 pt-10">
         <button className="absolute right-4 top-2 text-xs text-nathion-accent" onClick={() => { stopAllAudio(); setWorkspaceOpen(true); }}>Centro di controllo</button>
-        <button className="absolute left-4 top-2 text-xs text-nathion-muted" onClick={() => workspaceRequest("auth/logout", { method: "POST" }).then(() => window.location.reload())}>Esci</button>
+        <button className="absolute left-4 top-2 text-xs text-nathion-muted" onClick={() => { stopAllAudio(); setProfileOpen(true); }}>Profilo</button>
+        {profileOpen && <ProfilePanel onClose={() => setProfileOpen(false)} />}
         {workspaceOpen && <WorkspacePanel model={model} onClose={() => setWorkspaceOpen(false)} />}
         {account?.role !== "admin" && !account?.hosted_access && <p role="status" className="px-4 py-2 text-sm text-amber-300">Il tuo spazio è attivo. L’uso dei modelli di questo PC attende l’approvazione dell’amministratore.</p>}
         {activeId && (

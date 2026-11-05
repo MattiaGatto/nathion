@@ -1,0 +1,13 @@
+services:
+  mobile-gateway:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "${NATHION_TAILSCALE_IP:?Indirizzo Tailscale richiesto}:8443:8443"
+    volumes:
+      - ./android/server/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./android/.signing/tls/server.crt:/tls/server.crt:ro
+      - ./android/.signing/tls/server.key:/tls/server.key:ro
+    depends_on:
+      frontend:
+        condition: service_started

@@ -168,7 +168,7 @@ def export_data(db: Session = Depends(get_db)):
     return {"format_version": 1, "conversations": rows(Conversation), "messages": rows(Message),
             "memory": rows(Memory), "runs": rows(Run), "tool_actions": rows(ToolAction), "schedules": rows(Schedule),
             "preferences": [{"key": row.key[len(prefix):], "value": row.value} for row in preferences
-                            if row.key in {prefix + "default_model", prefix + "default_provider"} or row.key.startswith(prefix + "agent:")]}
+                            if row.key in {prefix + "default_model", prefix + "default_provider", prefix + "personal_profile"} or row.key.startswith(prefix + "agent:")]}
 
 
 @router.post("/runs")

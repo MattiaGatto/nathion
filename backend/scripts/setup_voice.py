@@ -14,14 +14,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--size", choices=["tiny", "base", "small"], default="tiny")
     parser.add_argument("--include-second-voice", action="store_true")
+    parser.add_argument("--separate-whisper", action="store_true", help="Download only Whisper into whisper-<size>.")
     args = parser.parse_args()
     models = ROOT / "models"
     models.mkdir(exist_ok=True)
     api = HfApi()
     manifest = []
+    whisper_dir = f"whisper-{args.size}" if args.separate_whisper else "whisper"
     sources = [
         (f"Systran/faster-whisper-{args.size}", {
-            name: f"whisper/{name}" for name in
+            name: f"{whisper_dir}/{name}" for name in
             ["config.json", "model.bin", "tokenizer.json", "vocabulary.txt"]
         }),
         ("rhasspy/piper-voices", {
@@ -30,7 +32,9 @@ def main() -> None:
             "it/it_IT/paola/medium/MODEL_CARD": "PIPER_MODEL_CARD.txt",
         }),
     ]
-    if args.include_second_voice:
+    if args.separate_whisper:
+        sources = sources[:1]
+    elif args.include_second_voice:
         sources.append(("rhasspy/piper-voices", {
             "it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx": "riccardo.onnx",
             "it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx.json": "riccardo.onnx.json",
@@ -55,7 +59,8 @@ def main() -> None:
             shutil.copyfile(cached, target)
             manifest.append({"repository": repo, "revision": revision,
                              "file": filename, "local": destination, "sha256": digest})
-    (models / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_path = models / (f"manifest-{whisper_dir}.json" if args.separate_whisper else "manifest.json")
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Voice models ready in {models}")
 
 

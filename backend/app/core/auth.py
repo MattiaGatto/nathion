@@ -383,3 +383,34 @@ def diagnostics(db: Session = Depends(get_db)):
                 "compatible_configured": bool(settings.compatible_base_url), "server_time": datetime.now(timezone.utc)}
     finally:
         db.info["system"] = previous
+
+class ProfileIn(BaseModel):
+    first_name: str = Field(default="", max_length=80)
+    last_name: str = Field(default="", max_length=80)
+    address: str = Field(default="", max_length=300)
+
+
+@router.get("/profile", response_model=ProfileIn)
+def read_profile(db: Session = Depends(get_db)):
+    from app.core.identity import preference_key
+    from app.db.models import AppSettings
+
+    row = db.get(AppSettings, preference_key("personal_profile"))
+    if row:
+        return ProfileIn.model_validate_json(row.value)
+    return ProfileIn(first_name=identity.get().display_name)
+
+
+@router.put("/profile", response_model=ProfileIn)
+def save_profile(profile: ProfileIn, db: Session = Depends(get_db)):
+    from app.core.identity import preference_key
+    from app.db.models import AppSettings
+
+    key = preference_key("personal_profile")
+    row = db.get(AppSettings, key)
+    if row is None:
+        row = AppSettings(key=key)
+        db.add(row)
+    row.value = profile.model_dump_json()
+    db.commit()
+    return profile

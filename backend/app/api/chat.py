@@ -209,6 +209,12 @@ async def chat_websocket(
             _touch_and_maybe_title(conversation, body.content)
             db.commit()
             history = [ChatMessage(role=m.role.value, content=m.content) for m in conversation.messages]
+            if isinstance(payload, dict) and payload.get("voice") is True:
+                history.insert(0, ChatMessage(role="system", content=(
+                    "Rispondi in italiano naturale, adatto alla lettura ad alta voce. "
+                    "Dai prima la risposta utile, di norma in due o tre frasi. "
+                    "Evita tabelle e formattazione elaborata. Se non hai eseguito un'azione, dillo chiaramente."
+                )))
             job = asyncio.create_task(generate(history))
     except WebSocketDisconnect:
         logger.info("Client disconnesso dalla conversazione %s", conversation_id)

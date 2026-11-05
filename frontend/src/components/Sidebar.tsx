@@ -10,6 +10,7 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
+  onOpenAgents: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -34,6 +35,7 @@ export function Sidebar({
   onNew,
   onDelete,
   onOpenSettings,
+  onOpenAgents,
   collapsed,
   onToggleCollapsed,
 }: Props) {
@@ -150,18 +152,9 @@ export function Sidebar({
       </div>
 
       <div className="border-t border-nathion-border p-3">
-        <div
-          title="Orchestrazione multi-agente in arrivo (Milestone 3)"
-          className="mb-1 flex w-full cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-nathion-muted/50"
-        >
-          <span className="flex items-center gap-2">
-            <AgentsIcon />
-            Agenti
-          </span>
-          <span className="rounded-full border border-nathion-border px-1.5 py-0.5 text-[9px] uppercase tracking-wide">
-            presto
-          </span>
-        </div>
+        <button onClick={onOpenAgents} className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-nathion-accent hover:bg-nathion-panel">
+          <AgentsIcon /> Agenti
+        </button>
         <button
           onClick={onOpenSettings}
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-nathion-muted transition hover:bg-nathion-panel hover:text-nathion-text"

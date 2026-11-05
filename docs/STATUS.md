@@ -12,7 +12,7 @@ richiedono dispositivi o servizi esterni.
 | Skills | File versionati Markdown/YAML, discovery, validazione e selezione contestuale | Gestione dei file riservata all'operatore; nessun marketplace o upload non attendibile |
 | Memoria | Categorie, fonte, fatti/inferenze, suggerimenti selettivi con salvataggio approvato, deduplica, BM25 e vettori locali, modifica e cancellazione | Qualità delle proposte da verificare; nessun salvataggio indiscriminato delle conversazioni |
 | Multi-agent voice | Profili Piper distinti, coda centrale, ascolto sequenziale dei contributi degli agenti | Ascolto sul telefono da accettare con prova reale |
-| Mobile | PWA responsive, manifest, service worker, proxy, account, inviti, ruoli e quote | Tailscale connesso ma Serve continua a risultare non abilitato; HTTPS remoto e installazione Android non accettati come superati |
+| Mobile | APK firmato con certificato privato, HTTPS sulla rete Tailscale, profilo e account; disponibile anche PWA | Installazione, microfono e prova da rete mobile sul telefono fisico |
 | Tool engine | Registry, calcolatrice/orologio, strumenti nei piani validati, MCP HTTP con allowlist, consenso e traccia | MCP richiede server scelti dall'operatore; nessuna shell o navigazione web arbitraria |
 | Operazioni | Programmazioni persistenti, stato aggregato, cancellazione, export e backup SQLite verificato | PC acceso necessario; nessuna sincronizzazione fra installazioni indipendenti |
 
@@ -35,8 +35,8 @@ programmazioni. Sono passati anche piano strutturato e suggerimenti con
 llama3.2:3b, il provider compatibile su Ollama /v1 e il flusso reale ospite:
 approvazione, modello consentito, dati isolati e sessione revocata. Il backup
 manuale ha superato `PRAGMA integrity_check` ed è stato copiato sul PC.
-Il tentativo finale di attivare Serve ha confermato che non è abilitato nella
-rete Tailscale; non è stato configurato un accesso pubblico.
+Il gateway APK usa la rete privata Tailscale con un certificato dedicato.
+Il collaudo HTTPS dal PC è passato. Serve una prova dal telefono su rete mobile.
 
 
 La migrazione multiutente crea un backup prima di modificare lo schema;

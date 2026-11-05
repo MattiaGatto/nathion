@@ -7,7 +7,14 @@ try {
         docker desktop start
         if ($LASTEXITCODE -ne 0) { throw 'Avvia Docker Desktop e riprova.' }
     }
-    docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build --wait
+    if (Test-Path -LiteralPath 'backend/data/pc-connector-key.txt') {
+        & './scripts/start-pc-connector.ps1'
+    }
+    $composeArgs = @('-f', 'docker-compose.yml', '-f', 'docker-compose.voice.yml')
+    if (Select-String -LiteralPath '.env' -Pattern '^COMPOSE_FILE=.*docker-compose.android.yml' -Quiet) {
+        $composeArgs += @('-f', 'docker-compose.android.yml')
+    }
+    docker compose @composeArgs up -d --build --wait
     if ($LASTEXITCODE -ne 0) { throw 'Avvio fallito. Controlla Docker Desktop e i log del backend.' }
     $dataPath = Join-Path $projectRoot 'backend/data'
     [IO.Directory]::CreateDirectory($dataPath) | Out-Null

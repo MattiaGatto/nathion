@@ -46,7 +46,8 @@ Non cancellare il volume backend_data se vuoi conservare chiave e cronologia.
 - Attività locali programmate, una tantum o ricorrenti, con risultati persistiti.
 - Account con password, Mattia amministratore, inviti e approvazione del server.
 - Dati separati per utente, modelli consentiti, quote e sessioni revocabili.
-- PWA responsive e accesso autenticato; cache offline limitata all'interfaccia.
+- APK Android firmato e preconfigurato per il PC su Tailscale, oltre alla PWA.
+- Profilo privato, accesso con password e registrazione su invito.
 - Provider compatibile opzionale, senza connessioni cloud obbligatorie.
 
 Il **Centro di controllo** contiene agenti, memoria, attività, voci, strumenti
