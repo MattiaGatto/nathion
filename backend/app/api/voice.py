@@ -67,7 +67,7 @@ def piper_voice(profile: str = "default"):
     return PiperVoice.load(str(path))
 
 
-def transcribe_audio(audio: bytes) -> str:
+def transcribe_audio(audio: bytes, wake_hint: bool = False) -> str:
     with _model_lock:
         model = whisper_model()
         # Decode first to bound duration before expensive inference.
@@ -77,7 +77,8 @@ def transcribe_audio(audio: bytes) -> str:
         if len(samples) > 16000 * 60:
             raise ValueError("Registrazione oltre 60 secondi")
         segments, _ = model.transcribe(samples, language=get_settings().voice_language,
-                                       vad_filter=True, beam_size=1)
+                                       vad_filter=True, beam_size=1,
+                                       initial_prompt="Ehi Nathion." if wake_hint else None)
         return " ".join(segment.text.strip() for segment in segments).strip()
 
 
@@ -128,7 +129,7 @@ async def execute(function, argument):
 
 
 @router.post("/transcribe")
-async def transcribe(request: Request):
+async def transcribe(request: Request, wake_hint: bool = False):
     require_voice()
     if request.headers.get("content-type", "").split(";")[0] not in {
         "audio/webm", "audio/ogg", "audio/mp4", "audio/wav", "audio/x-wav"
@@ -141,7 +142,7 @@ async def transcribe(request: Request):
         audio.extend(chunk)
     if not audio:
         raise HTTPException(422, "Registrazione vuota")
-    text = await execute(transcribe_audio, bytes(audio))
+    text = await execute(partial(transcribe_audio, wake_hint=wake_hint), bytes(audio))
     return {"text": text}
 
 
