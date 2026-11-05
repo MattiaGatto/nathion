@@ -10,6 +10,7 @@ export function HandsFreeVoice(props: Props) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [transcript, setTranscript] = useState("");
+  const [microphoneLevel, setMicrophoneLevel] = useState(0);
   const [bargeIn, setBargeIn] = useState(false);
   const interruptible = useRef(false); interruptible.current = bargeIn;
   const [threshold, setThreshold] = useState(0.018);
@@ -27,11 +28,14 @@ export function HandsFreeVoice(props: Props) {
   const cursor = useRef(0);
   const playbackGeneration = useRef(0);
   const idleTimeout = useRef<number>();
+  const transcriptReceived = useRef(false);
   function resetIdle() {
     clearTimeout(idleTimeout.current);
     idleTimeout.current = window.setTimeout(() => {
       stop();
-      setStatus("Sessione terminata dopo 20 secondi di silenzio.");
+      setStatus(transcriptReceived.current
+        ? "Microfono chiuso dopo 20 secondi di inattività."
+        : "Microfono chiuso dopo 20 secondi. Nessuna frase riconosciuta.");
     }, 20_000);
   }
 
@@ -60,7 +64,14 @@ export function HandsFreeVoice(props: Props) {
   useEffect(() => { if (!props.connected) stop(); }, [props.connected]);
 
   async function playQueue() {
-    if (!running.current || playing.current || !queue.current.length) return;
+    if (!running.current || playing.current) return;
+    if (!queue.current.length) {
+      if (!expected.current) {
+        setStatus("Risposta terminata · ti ascolto…");
+        resetIdle();
+      }
+      return;
+    }
     playing.current = true;
     const current = playbackGeneration.current;
     try {
@@ -74,7 +85,7 @@ export function HandsFreeVoice(props: Props) {
         if (current !== playbackGeneration.current) return;
         if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
         audioUrl.current = ""; audio.current = null; playing.current = false;
-        setStatus("Ti ascolto…"); void playQueue();
+        void playQueue();
       };
       player.onerror = () => fail(new Error("Riproduzione vocale non riuscita"));
       await player.play();
@@ -84,7 +95,7 @@ export function HandsFreeVoice(props: Props) {
 
   useEffect(() => {
     if (!running.current || !expected.current) return;
-    if (!props.response) { expected.current = false; stopPlayback(); setStatus("Risposta interrotta · ti ascolto…"); return; }
+    if (!props.response) { expected.current = false; stopPlayback(); setStatus("Risposta interrotta · ti ascolto…"); resetIdle(); return; }
     if (props.response.content.length < cursor.current) cursor.current = 0;
     let remaining = props.response.content.slice(cursor.current);
     let part;
@@ -98,7 +109,7 @@ export function HandsFreeVoice(props: Props) {
   }, [props.response]);
 
   async function start() {
-    stop(); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
+    stop(); transcriptReceived.current = false; setMicrophoneLevel(0); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
     claimAudio(owner.current, stop); running.current = true; setActive(true);
     const current = generation.current;
     let input: MediaStream | null = null;
@@ -120,6 +131,7 @@ export function HandsFreeVoice(props: Props) {
       const detector = new TurnDetector();
       let preRoll: Float32Array[] = [], frames: Float32Array[] = [];
       let processing = false;
+      let lastLevelUpdate = 0;
       const rate = context.sampleRate;
       capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
         if (!running.current || current !== generation.current || processing) return;
@@ -128,6 +140,11 @@ export function HandsFreeVoice(props: Props) {
         const speakingBack = playing.current || Boolean(latest.current.response && !latest.current.response.done);
         if (speakingBack && !interruptible.current) { detector.reset(); frames = []; preRoll = []; return; }
         const rms = Math.sqrt(frame.reduce((sum, sample) => sum + sample * sample, 0) / frame.length);
+        const now = performance.now();
+        if (now - lastLevelUpdate >= 150) {
+          setMicrophoneLevel(rms);
+          lastLevelUpdate = now;
+        }
         if (!detector.speaking) {
           preRoll.push(frame);
           while (preRoll.length * milliseconds > 500) preRoll.shift();
@@ -139,17 +156,20 @@ export function HandsFreeVoice(props: Props) {
           if (speakingBack) { expected.current = false; stopPlayback(); latest.current.onInterrupt(); }
           setStatus("Ti ascolto · termina la frase con una pausa…");
         } else if (action === "end") {
-          resetIdle();
           const recording = frames; frames = []; preRoll = []; processing = true; setStatus("Trascrizione locale…");
           const abort = new AbortController(); controller.current = abort;
           api.transcribe(wavAudio(recording, rate), abort.signal).then(({ text }) => {
             if (!running.current || current !== generation.current) return;
             setTranscript(text);
             if (text.trim()) {
+              transcriptReceived.current = true;
               cursor.current = 0; expected.current = true;
               if (!latest.current.onSend(text)) { expected.current = false; throw new Error("La chat non è pronta. Riprova dopo la risposta."); }
-              setStatus("NATHION sta rispondendo…");
-            } else setStatus("Nessuna voce riconosciuta · ti ascolto…");
+              setStatus("Frase inviata alla chat. Attendo la risposta…");
+            } else {
+              setStatus("Nessuna parola riconosciuta. Prova a parlare più vicino al microfono.");
+              resetIdle();
+            }
           }).catch((e) => { if (running.current && current === generation.current) fail(e); })
             .finally(() => { processing = false; detector.reset(); });
         }
@@ -162,5 +182,6 @@ export function HandsFreeVoice(props: Props) {
       if (current === generation.current) fail(e);
     }
   }
-  return <section className="mb-3 space-y-2 rounded-lg border border-nathion-border p-3 text-xs" aria-label="Conversazione vocale"><div className="flex flex-wrap items-center gap-3"><button className="rounded-lg border border-nathion-border px-3 py-2 disabled:opacity-40" disabled={!props.connected && !active} onClick={() => active ? (stop(), latest.current.onInterrupt()) : void start()}>{active ? "Termina conversazione vocale" : "Avvia conversazione vocale"}</button><span role="status">{status}</span></div><p className="text-nathion-muted">Le frasi vengono inviate dopo una pausa, solo durante la sessione attiva.</p><details><summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary><p className="my-2 text-nathion-muted">La sessione termina quando lasci la pagina o dopo 20 secondi senza parlare.</p><label><input type="checkbox" checked={bargeIn} onChange={(e) => setBargeIn(e.target.checked)} /> Interrompi parlando (usa cuffie per evitare l’eco)</label><label className="ml-3">Soglia microfono <input aria-label="Soglia microfono" type="range" min={0.008} max={0.08} step={0.002} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} /></label></details>{transcript && <p aria-label="Ultima frase riconosciuta">Tu: {transcript}</p>}{error && <p role="alert" className="text-red-300">{error}</p>}</section>;
+  return <section className="mb-3 space-y-2 rounded-lg border border-nathion-border p-3 text-xs" aria-label="Conversazione vocale"><div className="flex flex-wrap items-center gap-3"><button className="rounded-lg border border-nathion-border px-3 py-2 disabled:opacity-40" disabled={!props.connected && !active} onClick={() => active ? (stop(), latest.current.onInterrupt()) : void start()}>{active ? "Termina conversazione vocale" : "Avvia conversazione vocale"}</button><span role="status">{status}</span></div><p className="text-nathion-muted">Le frasi vengono inviate dopo una pausa, solo durante la sessione attiva.</p><details><summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary><p className="my-2 text-nathion-muted">La sessione termina quando lasci la pagina o dopo 20 secondi in ascolto senza parlare. La trascrizione e la risposta hanno il tempo di completarsi.</p><label><input type="checkbox" checked={bargeIn} onChange={(e) => setBargeIn(e.target.checked)} /> Interrompi parlando (usa cuffie per evitare l’eco)</label><label className="ml-3">Soglia microfono <input aria-label="Soglia microfono" type="range" min={0.008} max={0.08} step={0.002} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} /></label></details>{active && <label className="flex items-center gap-2 text-nathion-muted">Segnale microfono<meter min={0} max={Math.max(0.08, microphoneLevel)} low={threshold} value={microphoneLevel} /></label>}
+    {transcript && <p aria-live="polite" aria-label="Ultima frase riconosciuta">Tu: {transcript}</p>}{error && <p role="alert" className="text-red-300">{error}</p>}</section>;
 }

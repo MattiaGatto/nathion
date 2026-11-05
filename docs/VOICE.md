@@ -68,7 +68,8 @@ L'AudioWorklet decide i turni; Silero sul server filtra il contenuto finale.
 Non vengono dichiarati risultati equivalenti a un VAD neurale nel browser.
 
 La sessione si chiude cambiando conversazione, aprendo i pannelli,
-nascondendo la pagina, perdendo la connessione o dopo 20 secondi senza voce.
+nascondendo la pagina, perdendo la connessione o dopo 20 secondi di ascolto senza voce. Il timer attende il completamento della
+trascrizione e della risposta in corso.
 Puoi terminarla sempre dal pulsante. Le acquisizioni non vengono salvate;
 restano i messaggi inviati esplicitamente o dalla sessione attiva. Un calcolo
 nativo già avviato può finire dopo lo stop, ma non viene accodato altro audio.
