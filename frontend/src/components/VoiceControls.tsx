@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { api, voiceWebSocketUrl } from "../api/client";
+import { claimAudio, releaseAudio } from "../audioOwner";
 
-interface Props { disabled: boolean; onTranscript: (text: string) => void; reply: string; }
+export interface VoiceSegment { text: string; profile?: string; speaker?: string; }
+interface Props { disabled: boolean; onTranscript: (text: string) => void; reply: string; segments?: VoiceSegment[]; }
 type VoiceState = "idle" | "permission" | "connecting" | "recording" | "transcribing" | "synthesizing" | "playing";
 
-export function VoiceControls({ disabled, onTranscript, reply }: Props) {
+export function VoiceControls({ disabled, onTranscript, reply, segments }: Props) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState("");
   const [caption, setCaption] = useState("");
@@ -16,8 +18,10 @@ export function VoiceControls({ disabled, onTranscript, reply }: Props) {
   const url = useRef<string | null>(null);
   const timer = useRef<number>();
   const generation = useRef(0);
+  const owner = useRef(Symbol("voice"));
 
   function stop() {
+    releaseAudio(owner.current);
     generation.current++;
     clearTimeout(timer.current);
     if (recorder.current) {
@@ -82,6 +86,7 @@ export function VoiceControls({ disabled, onTranscript, reply }: Props) {
 
   async function record() {
     stop(); setError(""); setCaption(""); setState("permission");
+    claimAudio(owner.current, stop);
     const current = generation.current;
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
@@ -139,11 +144,12 @@ export function VoiceControls({ disabled, onTranscript, reply }: Props) {
 
   function listen() {
     stop(); setError(""); setCaption(""); setState("synthesizing");
+    claimAudio(owner.current, stop);
     const current = generation.current;
-    const channel = connect(current, { type: "speak", text: reply }, (event) => {
+    const channel = connect(current, segments ? { type: "speak", segments } : { type: "speak", text: reply }, (event) => {
       if (typeof event.data === "string") {
         const message = JSON.parse(event.data);
-        if (message.type === "audio") setCaption(message.text);
+        if (message.type === "audio") setCaption((message.speaker ? message.speaker + ": " : "") + message.text);
         if (message.type === "done") stop();
         return;
       }
@@ -163,12 +169,13 @@ export function VoiceControls({ disabled, onTranscript, reply }: Props) {
 
   const buttonClass = "rounded-lg border border-nathion-border px-3 py-2 text-xs disabled:opacity-40";
   const mayRecord = state === "idle" || state === "playing" || state === "synthesizing";
+  const playable = segments ? segments.length > 0 && segments.length <= 8 && segments.every((s) => s.text.length <= 4000) && segments.reduce((sum, s) => sum + s.text.length, 0) <= 16000 : reply.length > 0 && reply.length <= 4000;
   return <div className="mb-3 space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       {state === "recording" ?
         <button className={buttonClass} onClick={() => recorder.current?.stop()}>Termina e trascrivi</button> :
         <button className={buttonClass} disabled={!ready.stt || disabled || !mayRecord} onClick={record}>Registra voce</button>}
-      <button className={buttonClass} disabled={!ready.tts || !reply || reply.length > 4000 || state !== "idle"} onClick={listen}>Ascolta ultima risposta</button>
+      <button className={buttonClass} disabled={!ready.tts || !playable || state !== "idle"} onClick={listen}>{segments ? "Ascolta contributi agenti" : "Ascolta ultima risposta"}</button>
       {state !== "idle" && <button className={buttonClass} onClick={stop}>Interrompi audio</button>}
       <span role="status" className="text-xs text-nathion-muted">{{ idle: "Voce locale · massimo 55 s", permission: "Accesso al microfono…", connecting: "Connessione audio…", recording: "Registrazione · trascrizione progressiva…", transcribing: "Trascrizione finale…", synthesizing: "Preparazione voce…", playing: "In riproduzione…" }[state]}</span>
     </div>

@@ -99,3 +99,23 @@ def test_parts_keep_words():
     parts = voice_socket.speech_parts(text)
     assert len(parts) > 1
     assert " ".join(parts).split() == text.split()
+
+
+def test_distinct_profiles_share_one_acknowledged_queue(client, monkeypatch):
+    generated = []
+    def synthesize(text, profile="default"):
+        generated.append((text, profile))
+        return b"RIFF-" + profile.encode()
+    monkeypatch.setattr(voice, "synthesize_audio", synthesize)
+    with client.websocket_connect("/api/voice/ws") as socket:
+        socket.send_json({"type": "speak", "segments": [
+            {"text": "Primo contributo.", "profile": "default", "speaker": "Architect"},
+            {"text": "Secondo contributo.", "profile": "riccardo", "speaker": "Coding"}]})
+        assert socket.receive_json()["parts"] == 2
+        for profile, speaker in [("default", "Architect"), ("riccardo", "Coding")]:
+            metadata = socket.receive_json()
+            assert (metadata["profile"], metadata["speaker"]) == (profile, speaker)
+            assert socket.receive_bytes() == b"RIFF-" + profile.encode()
+            socket.send_json({"type": "next"})
+        assert socket.receive_json() == {"type": "done"}
+    assert generated == [("Primo contributo.", "default"), ("Secondo contributo.", "riccardo")]

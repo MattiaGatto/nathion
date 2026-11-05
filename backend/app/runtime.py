@@ -48,6 +48,7 @@ class AgentPatch(BaseModel):
     model: str | None = Field(default=None, min_length=1, max_length=200)
     memory_access: Literal["read", "none"] = "read"
     timeout_seconds: int = Field(default=60, ge=5, le=120)
+    voice_profile: str = Field(default="default", pattern=r"^[a-z][a-z0-9_-]{0,29}$")
 
 
 def load_agents(db: Session) -> dict[str, Agent]:

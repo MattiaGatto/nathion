@@ -3,12 +3,12 @@ import asyncio
 import io
 import logging
 import wave
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from threading import Lock
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
@@ -22,6 +22,18 @@ _admission = Lock()
 
 class SpeechIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    profile: str = Field(default="default", pattern=r"^[a-z][a-z0-9_-]{0,29}$")
+    speaker: str = Field(default="", max_length=80)
+
+
+class SpeechQueueIn(BaseModel):
+    segments: list[SpeechIn] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def bound_queue(self):
+        if sum(len(item.text) for item in self.segments) > 16000:
+            raise ValueError("Coda audio troppo lunga")
+        return self
 
 
 def require_voice() -> None:
@@ -40,11 +52,15 @@ def whisper_model():
                         local_files_only=True)
 
 
-@lru_cache(maxsize=1)
-def piper_voice():
+@lru_cache(maxsize=4)
+def piper_voice(profile: str = "default"):
     from piper import PiperVoice
 
-    path = Path(get_settings().piper_model_path)
+    settings = get_settings()
+    model_path = settings.piper_model_path if profile == "default" else settings.voice_profiles.get(profile)
+    if not model_path:
+        raise ValueError("Profilo vocale sconosciuto")
+    path = Path(model_path)
     if not path.is_file() or not Path(str(path) + ".json").is_file():
         raise RuntimeError("Modello Piper o configurazione assente")
     return PiperVoice.load(str(path))
@@ -64,11 +80,11 @@ def transcribe_audio(audio: bytes) -> str:
         return " ".join(segment.text.strip() for segment in segments).strip()
 
 
-def synthesize_audio(text: str) -> bytes:
+def synthesize_audio(text: str, profile: str = "default") -> bytes:
     with _model_lock:
         output = io.BytesIO()
         with wave.open(output, "wb") as wav:
-            piper_voice().synthesize_wav(text, wav)
+            piper_voice(profile).synthesize_wav(text, wav)
         return output.getvalue()
 
 
@@ -76,6 +92,7 @@ def synthesize_audio(text: str) -> bytes:
 def status():
     settings = get_settings()
     return {"enabled": settings.voice_enabled,
+            "profiles": [name for name, path in {"default": settings.piper_model_path, **settings.voice_profiles}.items() if Path(path).is_file() and Path(path + ".json").is_file()],
             "whisper_model_present": Path(settings.whisper_model_path).is_dir(),
             "piper_model_present": Path(settings.piper_model_path).is_file()
             and Path(settings.piper_model_path + ".json").is_file()}
@@ -128,5 +145,6 @@ async def speak(body: SpeechIn):
     require_voice()
     if not body.text.strip():
         raise HTTPException(422, "Testo vuoto")
-    audio = await execute(synthesize_audio, body.text)
+    synthesize = synthesize_audio if body.profile == "default" else partial(synthesize_audio, profile=body.profile)
+    audio = await execute(synthesize, body.text)
     return Response(audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})

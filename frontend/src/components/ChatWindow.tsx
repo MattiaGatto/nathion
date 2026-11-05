@@ -26,7 +26,7 @@ export function ChatWindow({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [voiceDraft, setVoiceDraft] = useState<{ text: string }>();
 
-  const { status, streaming, error, sendMessage } = useChatSocket(conversationId, model);
+  const { status, streaming, error, sendMessage, cancel } = useChatSocket(conversationId, model);
 
   useEffect(() => {
     setConversation(null);
@@ -43,7 +43,7 @@ export function ChatWindow({
   }, [conversation, streaming]);
 
   function handleSend(text: string) {
-    if (!conversation) return;
+    if (!conversation || status !== "open" || (streaming && !streaming.done)) return;
 
     const optimisticUser: MessageOut = {
       id: `local-${crypto.randomUUID()}`,
@@ -52,14 +52,13 @@ export function ChatWindow({
       model_used: null,
       created_at: new Date().toISOString(),
     };
-    setConversation((prev) => prev && { ...prev, messages: [...prev.messages, optimisticUser] });
-
-    sendMessage(text, () => {
+    const accepted = sendMessage(text, () => {
       api
         .getConversation(conversationId)
         .then(setConversation)
         .finally(onConversationUpdated);
     });
+    if (accepted) setConversation((prev) => prev && { ...prev, messages: [...prev.messages, optimisticUser] });
   }
 
   if (loadError) {
@@ -126,6 +125,7 @@ export function ChatWindow({
 
       <div className="border-t border-nathion-border px-6 py-4">
         <div className="mx-auto max-w-3xl">
+          {streaming && !streaming.done && <button className="mb-3 rounded-lg border border-nathion-border px-3 py-2 text-xs" onClick={cancel}>Interrompi risposta</button>}
           <VoiceControls key={conversationId} disabled={status !== "open" || Boolean(streaming && !streaming.done)}
             onTranscript={(text) => setVoiceDraft({ text })}
             reply={conversation?.messages.filter((m) => m.role === "assistant").at(-1)?.content ?? ""} />

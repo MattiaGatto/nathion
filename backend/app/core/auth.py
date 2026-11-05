@@ -102,7 +102,7 @@ def login(body: LoginIn, request: Request, response: Response):
     attempts.clear()
     payload = f"{int(time.time()) + 8 * 3600}.{secrets.token_hex(16)}"
     response.set_cookie(COOKIE, f"{payload}.{signature(payload)}", httponly=True,
-                        secure=request.url.scheme == "https", samesite="strict", path="/api", max_age=8 * 3600)
+                        secure=get_settings().auth_cookie_secure or request.url.scheme == "https", samesite="strict", path="/api", max_age=8 * 3600)
     return {"authenticated": True}
 
 

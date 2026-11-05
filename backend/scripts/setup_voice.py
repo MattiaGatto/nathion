@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--size", choices=["tiny", "base", "small"], default="tiny")
+    parser.add_argument("--include-second-voice", action="store_true")
     args = parser.parse_args()
     models = ROOT / "models"
     models.mkdir(exist_ok=True)
@@ -29,6 +30,12 @@ def main() -> None:
             "it/it_IT/paola/medium/MODEL_CARD": "PIPER_MODEL_CARD.txt",
         }),
     ]
+    if args.include_second_voice:
+        sources.append(("rhasspy/piper-voices", {
+            "it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx": "riccardo.onnx",
+            "it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx.json": "riccardo.onnx.json",
+            "it/it_IT/riccardo/x_low/MODEL_CARD": "RICCARDO_MODEL_CARD.txt",
+        }))
     for repo, files in sources:
         info = api.model_info(repo, files_metadata=True)
         revision = info.sha

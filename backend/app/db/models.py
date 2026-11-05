@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, Text, Boolean, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -119,4 +119,17 @@ class ToolAction(Base):
     payload: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     result: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Schedule(Base):
+    __tablename__ = "schedules"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    prompt: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(String(200))
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    repeat_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_status: Mapped[str] = mapped_column(String(30), default="never")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

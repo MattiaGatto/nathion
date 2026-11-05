@@ -4,6 +4,7 @@ import json
 import re
 import time
 from contextlib import suppress
+from functools import partial
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
@@ -86,12 +87,13 @@ async def recognize(socket: WebSocket) -> None:
                 await preview
 
 
-async def speak(socket: WebSocket, text: str) -> None:
-    parts = speech_parts(text)
+async def speak(socket: WebSocket, segments: list[voice.SpeechIn]) -> None:
+    parts = [(part, segment.profile, segment.speaker) for segment in segments for part in speech_parts(segment.text)]
     await socket.send_json({"type": "ready", "parts": len(parts)})
-    for index, part in enumerate(parts):
-        audio = await voice.execute(voice.synthesize_audio, part)
-        await socket.send_json({"type": "audio", "index": index, "text": part})
+    for index, (part, profile, speaker) in enumerate(parts):
+        synthesize = voice.synthesize_audio if profile == "default" else partial(voice.synthesize_audio, profile=profile)
+        audio = await voice.execute(synthesize, part)
+        await socket.send_json({"type": "audio", "index": index, "text": part, "speaker": speaker, "profile": profile})
         await socket.send_bytes(audio)
         # Client acknowledgement bounds the queue to one segment and permits
         # cancellation between segments instead of synthesizing a whole answer.
@@ -125,10 +127,11 @@ async def voice_websocket(socket: WebSocket) -> None:
                 raise HTTPException(415, "Formato audio non supportato")
             await recognize(socket)
         elif start.get("type") == "speak":
-            body = voice.SpeechIn.model_validate({"text": start.get("text")})
-            if not body.text.strip():
+            queue = voice.SpeechQueueIn.model_validate({"segments": start["segments"]}) if "segments" in start else voice.SpeechQueueIn(segments=[voice.SpeechIn.model_validate(start)])
+            if any(not item.text.strip() for item in queue.segments):
                 raise HTTPException(422, "Testo vuoto")
-            await speak(socket, body.text)
+            async with asyncio.timeout(600):
+                await speak(socket, queue.segments)
         else:
             raise HTTPException(422, "Richiesta vocale non valida")
     except WebSocketDisconnect:

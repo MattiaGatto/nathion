@@ -58,7 +58,7 @@ export async function workspaceRequest<T>(path: string, options?: RequestInit): 
 
 export const api = {
   voiceStatus: () => fetch(`${API_BASE_URL}/api/voice/status`).then((r) =>
-    handle<{ enabled: boolean; whisper_model_present: boolean; piper_model_present: boolean }>(r)),
+    handle<{ enabled: boolean; whisper_model_present: boolean; piper_model_present: boolean; profiles: string[] }>(r)),
   transcribe: (audio: Blob, signal?: AbortSignal) =>
     fetch(`${API_BASE_URL}/api/voice/transcribe`, {
       method: "POST", headers: { "Content-Type": audio.type }, body: audio, signal,

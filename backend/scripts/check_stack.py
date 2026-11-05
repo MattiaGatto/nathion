@@ -31,7 +31,7 @@ def main() -> None:
     print(f"Real WebSocket STT: {transcript}", flush=True)
     with httpx.Client(base_url="http://127.0.0.1:8000", timeout=180, trust_env=False, headers=headers) as client:
         assert client.get("/health").status_code == 200
-        models = client.get("/api/models")
+        models = client.get("/api/models?provider=ollama")
         models.raise_for_status()
         ids = [model["id"] for model in models.json()]
         model = next((item for item in ids if item.startswith("llama3.2:3b")), ids[0])
@@ -39,7 +39,7 @@ def main() -> None:
         response.raise_for_status()
         conversation_id = response.json()["id"]
         response = client.post(f"/api/chat/conversations/{conversation_id}/messages", json={
-            "model": model, "content": transcript + " Rispondi in italiano con una sola frase breve."
+            "model": model, "provider": "ollama", "content": transcript + " Rispondi in italiano con una sola frase breve."
         })
         response.raise_for_status()
         reply = response.json()["messages"][-1]["content"]

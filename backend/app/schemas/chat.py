@@ -1,7 +1,7 @@
 """Schemi Pydantic per request/response delle API di chat."""
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class MessageOut(BaseModel):
@@ -32,9 +32,16 @@ class CreateConversationIn(BaseModel):
 
 
 class SendMessageIn(BaseModel):
-    content: str
-    model: str
+    content: str = Field(min_length=1, max_length=12000)
+    model: str = Field(min_length=1, max_length=200)
     provider: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def meaningful_content(cls, content):
+        if not content.strip():
+            raise ValueError("Messaggio vuoto")
+        return content
 
 
 class ModelOut(BaseModel):

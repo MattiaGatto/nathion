@@ -9,7 +9,13 @@ from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, HttpUrl
+
+
+class MCPConnection(BaseModel):
+    url: HttpUrl
+    allowed_tools: list[str] = Field(default_factory=list, max_length=50)
+    headers: dict[str, SecretStr] = {}
 
 
 class Settings(BaseSettings):
@@ -23,11 +29,14 @@ class Settings(BaseSettings):
     whisper_model_path: str = "./models/whisper"
     piper_model_path: str = "./models/voice.onnx"
     voice_language: str = "it"
+    voice_profiles: dict[str, str] = {}
     auth_enabled: bool = True
     auth_token_file: str = "./data/access-token.txt"
+    auth_cookie_secure: bool = False
     compatible_base_url: str = ""
     compatible_api_key: SecretStr = SecretStr("")
     memory_embedding_model: str = ""
+    mcp_servers: dict[str, MCPConnection] = {}
 
     # --- Database ---
     # SQLite file-based per questa milestone. Path assoluto per evitare

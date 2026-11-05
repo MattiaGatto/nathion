@@ -1,6 +1,6 @@
-const CACHE = "nathion-shell-v1";
+const CACHE = "nathion-shell-v2";
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"])));
 });
 self.addEventListener("activate", (event) => {
   event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("nathion-shell-") && key !== CACHE).map((key) => caches.delete(key)))));

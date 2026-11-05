@@ -3,16 +3,19 @@ import ast
 import json
 import math
 import operator
+import asyncio
 from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.db.models import Memory, ToolAction
 from app.db.session import get_db
+from app import mcp_bridge
+from app.core.config import get_settings
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
 REGISTRY = [
@@ -46,14 +49,35 @@ def calculate(expression: str) -> float | int:
 
 
 class ToolIn(BaseModel):
-    tool: Literal["calculator", "clock", "memory.delete"]
+    tool: Literal["calculator", "clock", "memory.delete", "mcp"]
     expression: str = Field(default="", max_length=200)
     memory_id: str = Field(default="", max_length=36)
+    server: str = Field(default="", max_length=80)
+    remote_tool: str = Field(default="", max_length=100)
+    arguments: dict = Field(default_factory=dict, max_length=50)
+
+    @model_validator(mode="after")
+    def bound_arguments(self):
+        if len(json.dumps(self.arguments, allow_nan=False)) > 16000:
+            raise ValueError("Argomenti troppo grandi")
+        return self
 
 
 @router.get("")
 def registry():
-    return REGISTRY
+    return REGISTRY + [{"id": "mcp", "description": "Strumenti HTTP configurati dal proprietario", "approval": True,
+                        "permissions": ["mcp.call"], "servers": list(get_settings().mcp_servers)}]
+
+
+@router.get("/mcp/{server}")
+async def discover_mcp(server: str):
+    try:
+        mcp_bridge.resolve(server)
+        return await mcp_bridge.connect_call(server)
+    except ValueError as exc:
+        raise HTTPException(403, "Server MCP non configurato") from exc
+    except Exception as exc:
+        raise HTTPException(503, "Server MCP o SDK opzionale non disponibile") from exc
 
 
 @router.get("/actions")
@@ -61,8 +85,27 @@ def actions(db: Session = Depends(get_db)):
     return db.query(ToolAction).order_by(ToolAction.created_at.desc()).limit(100).all()
 
 
+@router.delete("/actions/{action_id}", status_code=204)
+def delete_action(action_id: str, db: Session = Depends(get_db)):
+    action = db.get(ToolAction, action_id)
+    if not action:
+        raise HTTPException(404, "Operazione non trovata")
+    if action.status == "executing":
+        raise HTTPException(409, "Operazione in esecuzione")
+    db.delete(action); db.commit()
+
+
 @router.post("/execute")
 def execute(body: ToolIn, db: Session = Depends(get_db)):
+    if body.tool == "mcp":
+        try:
+            digest = mcp_bridge.fingerprint(body.server, body.remote_tool)
+        except ValueError as exc:
+            raise HTTPException(403, "Server o strumento MCP non autorizzato") from exc
+        action = ToolAction(tool="mcp", payload=json.dumps({"server": body.server, "tool": body.remote_tool,
+                            "arguments": body.arguments, "configuration": digest}, ensure_ascii=False))
+        db.add(action); db.commit(); db.refresh(action)
+        return action
     if body.tool == "clock":
         return {"status": "completed", "result": datetime.now(timezone.utc).isoformat()}
     if body.tool == "calculator":
@@ -78,7 +121,7 @@ def execute(body: ToolIn, db: Session = Depends(get_db)):
 
 
 @router.post("/actions/{action_id}/{decision}")
-def decide(action_id: str, decision: Literal["approve", "reject"], db: Session = Depends(get_db)):
+async def decide(action_id: str, decision: Literal["approve", "reject"], db: Session = Depends(get_db)):
     # Conditional update claims the action once, including concurrent requests.
     changed = db.execute(update(ToolAction).where(ToolAction.id == action_id, ToolAction.status == "pending")
                          .values(status="executing" if decision == "approve" else "rejected"))
@@ -86,7 +129,27 @@ def decide(action_id: str, decision: Literal["approve", "reject"], db: Session =
         db.rollback()
         raise HTTPException(409, "Azione inesistente o già decisa")
     action = db.get(ToolAction, action_id)
-    if decision == "approve":
+    if decision == "approve" and action.tool == "mcp":
+        # Persist the claim before crossing the network. A crash never retries
+        # an operation whose remote effect cannot be established.
+        db.commit(); db.refresh(action)
+        payload = json.loads(action.payload)
+        try:
+            if mcp_bridge.fingerprint(payload["server"], payload["tool"]) != payload["configuration"]:
+                action.status = "failed"
+                action.result = json.dumps({"detail": "Configurazione cambiata. Richiedi una nuova approvazione."})
+            else:
+                result = await mcp_bridge.connect_call(payload["server"], payload["tool"], payload["arguments"])
+                action.status = "failed" if result["is_error"] else "completed"
+                action.result = json.dumps(result, ensure_ascii=False)
+        except asyncio.CancelledError:
+            action.status = "unknown"
+            db.commit()
+            raise
+        except Exception as exc:
+            action.status = "unknown"
+            action.result = json.dumps({"detail": "Esito remoto non verificabile. Nessun nuovo tentativo automatico.", "error": type(exc).__name__})
+    elif decision == "approve":
         memory_id = json.loads(action.payload)["memory_id"]
         memory = db.get(Memory, memory_id)
         if memory:

@@ -3,11 +3,12 @@ services:
   backend:
     build:
       args:
-        NATHION_EXTRAS: dev,voice
+        NATHION_EXTRAS: ${NATHION_EXTRAS:-dev,voice}
     environment:
       NATHION_VOICE_ENABLED: "true"
       NATHION_WHISPER_MODEL_PATH: /models/whisper
       NATHION_PIPER_MODEL_PATH: /models/voice.onnx
       NATHION_VOICE_LANGUAGE: it
+      NATHION_VOICE_PROFILES: '{"riccardo":"/models/riccardo.onnx"}'
     volumes:
       - ./models:/models:ro

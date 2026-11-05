@@ -11,12 +11,16 @@ Flusso WebSocket (`/ws/chat/{conversation_id}`):
    completa e invia un marker di fine.
 """
 import logging
+import asyncio
+import json
+from contextlib import suppress
+from pydantic import ValidationError
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.db.models import Conversation, Message, MessageRole
-from app.db.session import SessionLocal, get_db
+from app.db.session import get_db
 from app.llm.base import ChatMessage, LLMProviderError
 from app.llm.gateway import LLMGateway, get_gateway
 from app.core.preferences import default_provider
@@ -132,59 +136,73 @@ async def chat_websocket(
     conversation_id: str,
     model: str,
     provider: str | None = None,
+    db: Session = Depends(get_db),
+    gateway: LLMGateway = Depends(get_gateway),
 ) -> None:
     await websocket.accept()
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None:
+        await websocket.send_json({"type": "error", "detail": "Conversazione non trovata"})
+        await websocket.close(code=4404)
+        return
+    job: asyncio.Task | None = None
 
-    # Sessione dedicata a questa connessione, aperta e chiusa qui
-    # esplicitamente: `next(get_db())` avrebbe lasciato la generator
-    # function di `get_db` sospesa, con il suo `finally` (altro
-    # `db.close()`) eseguito solo alla garbage collection invece che in
-    # modo deterministico.
-    db: Session = SessionLocal()
-    gateway = get_gateway()
+    async def generate(history):
+        try:
+            full_reply = ""
+            async for chunk in gateway.chat_stream(history, model=model, provider=provider or default_provider(db)):
+                full_reply += chunk
+                await websocket.send_json({"type": "chunk", "content": chunk})
+            message = Message(conversation_id=conversation_id, role=MessageRole.assistant,
+                              content=full_reply, model_used=model)
+            db.add(message)
+            db.commit()
+            await websocket.send_json({"type": "done", "message_id": message.id})
+        except (LLMProviderError, ValueError) as exc:
+            await websocket.send_json({"type": "error", "detail": str(exc)})
+        except (WebSocketDisconnect, OSError):
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            db.rollback()
+            logger.exception("Errore di generazione nella conversazione %s", conversation_id)
+            await websocket.send_json({"type": "error", "detail": "Generazione fallita. Riprova."})
 
     try:
-        conversation = db.get(Conversation, conversation_id)
-        if conversation is None:
-            await websocket.send_json({"type": "error", "detail": "Conversazione non trovata"})
-            await websocket.close(code=4404)
-            return
-
         while True:
-            user_text = await websocket.receive_text()
-
-            user_message = Message(
-                conversation_id=conversation_id, role=MessageRole.user, content=user_text
-            )
-            db.add(user_message)
-            _touch_and_maybe_title(conversation, user_text)
-            db.commit()
-
-            history = [
-                ChatMessage(role=m.role.value, content=m.content) for m in conversation.messages
-            ]
-
-            full_reply = ""
+            raw = await websocket.receive_text()
             try:
-                async for chunk in gateway.chat_stream(history, model=model, provider=provider or default_provider(db)):
-                    full_reply += chunk
-                    await websocket.send_json({"type": "chunk", "content": chunk})
-            except (LLMProviderError, ValueError) as exc:
-                await websocket.send_json({"type": "error", "detail": str(exc)})
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict) and payload.get("type") == "cancel":
+                if job and not job.done():
+                    job.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await job
+                job = None
+                await websocket.send_json({"type": "cancelled"})
                 continue
-
-            assistant_message = Message(
-                conversation_id=conversation_id,
-                role=MessageRole.assistant,
-                content=full_reply,
-                model_used=model,
-            )
-            db.add(assistant_message)
+            if job and not job.done():
+                await websocket.send_json({"type": "busy"})
+                continue
+            content = payload.get("content") if isinstance(payload, dict) and payload.get("type") == "message" else raw
+            try:
+                body = SendMessageIn(content=content, model=model, provider=provider)
+            except ValidationError:
+                await websocket.send_json({"type": "error", "detail": "Messaggio non valido (massimo 12000 caratteri)."})
+                continue
+            db.add(Message(conversation_id=conversation_id, role=MessageRole.user, content=body.content))
+            _touch_and_maybe_title(conversation, body.content)
             db.commit()
-
-            await websocket.send_json({"type": "done", "message_id": assistant_message.id})
-
+            history = [ChatMessage(role=m.role.value, content=m.content) for m in conversation.messages]
+            job = asyncio.create_task(generate(history))
     except WebSocketDisconnect:
         logger.info("Client disconnesso dalla conversazione %s", conversation_id)
     finally:
-        db.close()
+        if job:
+            if not job.done():
+                job.cancel()
+            with suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
+                await job

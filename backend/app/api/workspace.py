@@ -4,8 +4,9 @@ from threading import Lock
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect
 
-from app.db.models import Memory, MemoryVector, Run, AppSettings
+from app.db.models import Memory, MemoryVector, Run, AppSettings, Conversation, Message, ToolAction, Schedule
 from app.db.session import get_db
 from app.llm.gateway import LLMGateway, get_gateway
 from app.core.preferences import default_provider
@@ -26,6 +27,8 @@ def agents(db: Session = Depends(get_db)):
 def configure_agent(agent_id: str, body: AgentPatch, db: Session = Depends(get_db)):
     if agent_id not in AGENTS:
         raise HTTPException(404, "Agente non trovato")
+    if body.voice_profile != "default" and body.voice_profile not in get_settings().voice_profiles:
+        raise HTTPException(422, "Profilo vocale non configurato")
     key = f"agent:{agent_id}"
     setting = db.get(AppSettings, key)
     if not setting:
@@ -138,6 +141,29 @@ def run_detail(run_id: str, db: Session = Depends(get_db)):
     if not row:
         raise HTTPException(404, "Attività non trovata")
     return run_out(row)
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+def delete_run(run_id: str, db: Session = Depends(get_db)):
+    row = db.get(Run, run_id)
+    if not row:
+        raise HTTPException(404, "Attività non trovata")
+    if row.status == "running":
+        raise HTTPException(409, "Attività ancora in esecuzione")
+    db.query(Schedule).filter_by(last_run_id=run_id).update({"last_run_id": None})
+    db.delete(row); db.commit()
+
+
+@router.get("/export")
+def export_data(db: Session = Depends(get_db)):
+    def rows(model):
+        fields = [column.key for column in inspect(model).column_attrs]
+        return [{field: getattr(row, field) for field in fields} for row in db.query(model).all()]
+    preferences = db.query(AppSettings).all()
+    return {"format_version": 1, "conversations": rows(Conversation), "messages": rows(Message),
+            "memory": rows(Memory), "runs": rows(Run), "tool_actions": rows(ToolAction), "schedules": rows(Schedule),
+            "preferences": [{"key": row.key, "value": row.value} for row in preferences
+                            if row.key in {"default_model", "default_provider"} or row.key.startswith("agent:")]}
 
 
 @router.post("/runs")

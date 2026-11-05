@@ -1,146 +1,102 @@
 # NATHION
 
-Stato aggiornato: [capacità e lavoro rimanente](docs/STATUS.md).
-Per accesso protetto, chiave locale e avvio aggiornato vedi [OPERATIONS.md](docs/OPERATIONS.md).
-La parte seguente descrive la Foundation originale; i criteri storici non
-certificano le milestone successive.
+**Your Intelligence. Your System. Your Control.**
 
-> Your Intelligence. Your System. Your Control.
+Assistente personale locale con chat, voce, agenti specializzati, memoria
+controllabile e strumenti soggetti a permessi. Il telefono è un client:
+modelli e dati rimangono sul PC, salvo provider esterni configurati esplicitamente.
 
-Assistente AI personale, locale, multimodale e multi-agent. Questo
-repository è alla **Milestone 1 — Foundation**: chat testuale
-funzionante tra un frontend React e un backend FastAPI, con un LLM
-Gateway che parla con Ollama in locale, e persistenza delle
-conversazioni su SQLite.
+## Avvio su questo PC
 
-Vedi `docs/adr/` per le decisioni architetturali e il documento di
-costituzione del progetto per la roadmap completa.
+Prerequisiti: Docker Desktop, Ollama in esecuzione e almeno un modello chat.
+I modelli Whisper, Piper e mxbai embedding sono già stati preparati su questo PC.
 
-## Prerequisiti
-
-- Docker Desktop (con backend WSL2 se sei su Windows)
-- [Ollama](https://ollama.com) installato e in esecuzione sull'host,
-  con almeno un modello scaricato:
-  ```bash
-  ollama pull llama3.1
-  ```
-
-## Avvio rapido
-
-```bash
-cp .env.example .env
-docker compose up --build
+```powershell
+./start.ps1
 ```
 
-- Backend: http://localhost:8000 (healthcheck su `/health`)
-- Frontend: http://localhost:4173
+Apri [NATHION](http://localhost:4173). La chiave personale è nel file
+`backend/data/access-token.txt`, escluso da Git. Il segreto originale è
+persistito nel volume Docker; non viene stampato dallo script.
 
-Apri il frontend: alla prima apertura crea automaticamente una
-conversazione e seleziona in silenzio il primo modello Ollama
-disponibile. Lo storico delle conversazioni è nella barra laterale a
-sinistra; il modello attivo (e il provider) si cambiano dal pannello
-**Impostazioni** in basso a sinistra — la scelta viene salvata e
-sopravvive a un riavvio. Se non vedi modelli disponibili, esegui
-`ollama pull <nome-modello>` e riapri il pannello impostazioni.
+Senza lo script:
 
-## Sviluppo con hot-reload
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build --wait
+docker compose cp backend:/app/data/access-token.txt ./backend/data/access-token.txt
 ```
 
-In questa modalità il frontend gira su http://localhost:5173 con Vite
-in dev mode (hot reload) e il backend con `uvicorn --reload`.
+Il backend rimane su localhost:8000; il frontend inoltra API e WebSocket
+allo stesso indirizzo della pagina. Le porte sono pubblicate solo su loopback.
+Non cancellare il volume backend_data se vuoi conservare chiave e cronologia.
 
-In alternativa, per sviluppare senza Docker:
+## Cosa puoi usare
 
-```bash
-# backend
+- Chat testuale persistente con streaming e interruzione della generazione.
+- Registrazione vocale, trascrizione locale modificabile, parziali e risposte Piper.
+- Sette agenti, skills Markdown/YAML e workflow con dipendenze, timeout e timeline.
+- Modello e voce configurabili per agente, ascolto sequenziale dei contributi.
+- Memoria esplicita con categorie, fonte, certezza, deduplicazione e modifica.
+- Ricerca BM25 e semantica locale, con fallback dichiarato e stato di indicizzazione.
+- Calcolatrice e orologio autorizzati; cancellazioni e chiamate MCP con approvazione.
+- Attività locali programmate, una tantum o ricorrenti, con risultati persistiti.
+- PWA responsive e accesso autenticato; cache offline limitata all'interfaccia.
+- Provider compatibile opzionale, senza connessioni cloud obbligatorie.
+
+Il **Centro di controllo** contiene agenti, memoria, attività, voci, strumenti
+e programmazioni. Le operazioni MCP richiedono server e tool esplicitamente
+configurati dal proprietario. Non viene concesso accesso arbitrario alla shell.
+
+## Guida e stato
+
+- [Avvio, accesso, backup e configurazione](docs/OPERATIONS.md)
+- [Voce locale e verifiche](docs/VOICE.md)
+- [Procedura Android](docs/ANDROID.md)
+- [Capacità effettive e lavoro rimanente](docs/STATUS.md)
+- [Decisioni architetturali](docs/adr/)
+
+Il collaudo Android richiede account/rete privata, permesso microfono e prova
+sul telefono. Le prove automatiche o con audio sintetico non sostituiscono
+questo collaudo. Conversazione full duplex e interruzione vocale automatica
+non sono ancora implementate; lo stop attuale è manuale.
+
+## Sviluppo
+
+Python 3.12+ e Node.js sono necessari soltanto per lo sviluppo senza Docker.
+Dal backend installa gli extra necessari e avvia uvicorn su loopback:
+
+```powershell
 cd backend
-pip install -e ".[dev]"
-uvicorn app.main:app --reload
+uv sync --extra dev --extra voice --extra mcp
+uv run uvicorn app.main:app --host 127.0.0.1 --reload
+```
 
-# frontend (altro terminale)
-cd frontend
-npm install
+Configura i percorsi dei modelli e Ollama per l'host come descritto nella guida.
+In un altro terminale, dal frontend:
+
+```powershell
+npm ci
 npm run dev
 ```
 
-## Note per Windows + WSL2
+Le API usano un cookie HttpOnly o Bearer per gli script. I segreti si
+configurano nell'ambiente, senza inserirli nel codice o nel repository.
 
-Con Docker Desktop configurato per usare il backend WSL2,
-`host.docker.internal` (il default in `.env.example`) risolve
-automaticamente all'host Windows dove gira Ollama — non serve
-configurazione aggiuntiva. Se Ollama è in esecuzione **dentro** WSL2
-invece che su Windows nativo, verifica con `curl http://localhost:11434`
-dentro WSL2 che risponda, poi lascia comunque `host.docker.internal`:
-Docker Desktop instrada correttamente in entrambi i casi.
+## Verifica
 
-## Note per Linux nativo (senza Docker Desktop)
+Dal backend con gli extra installati:
 
-`host.docker.internal` non è risolto automaticamente da Docker Engine
-puro. Il `docker-compose.yml` include già
-`extra_hosts: host.docker.internal:host-gateway`, che dovrebbe bastare
-su kernel Linux recenti. Se non funziona, alternative:
-
-- Imposta `NATHION_OLLAMA_BASE_URL` all'IP del bridge Docker (di solito
-  `http://172.17.0.1:11434`, verifica con `ip addr show docker0`).
-- Oppure aggiungi `network_mode: host` al servizio `backend` nel
-  compose file e usa `http://localhost:11434`.
-
-## Test
-
-```bash
-cd backend
-pip install -e ".[dev]"
-pytest
+```powershell
+python -m pytest -q
+python scripts/check_stack.py
+python scripts/check_product.py
+python scripts/check_memory.py
+python scripts/check_multi_voice.py
+python scripts/check_cancellation.py
+python scripts/check_mcp_http.py
 ```
 
-12 test coprono: healthcheck, creazione/recupero/eliminazione
-conversazioni (criterio di accettazione "persistenza"), titolo
-auto-generato dal primo messaggio, ordinamento dello storico per
-ultima attività, invio messaggio end-to-end via REST, e il routing del
-gateway verso un provider — il tutto con un provider LLM finto
-(`StubProvider` in `tests/conftest.py`), per non dipendere da un'istanza
-Ollama in esecuzione durante i test.
-
-## Struttura del repo
-
-```
-backend/app/
-  main.py          # entrypoint FastAPI
-  api/             # endpoint REST + WebSocket
-  core/            # config e logging
-  llm/             # LLM Gateway + provider (Ollama)
-  db/              # modelli SQLAlchemy + sessione
-  schemas/         # Pydantic request/response
-frontend/src/
-  components/      # Sidebar, ChatWindow, SettingsPanel, Composer, MessageBubble, ...
-  hooks/           # useChatSocket (WebSocket streaming)
-  api/             # client HTTP
-docs/adr/          # Architecture Decision Records
-```
-
-## Criteri di accettazione Milestone 1
-
-- [x] `docker compose up` avvia frontend+backend senza errori
-- [x] `GET /health` risponde 200
-- [x] Il gateway instrada correttamente verso un provider (verificato
-      con provider finto nei test; verificato manualmente con Ollama
-      reale: vedi sopra)
-- [x] Una conversazione e i suoi messaggi sopravvivono a un riavvio
-      (SQLite persistito su volume Docker)
-- [x] Messaggio inviato via API → risposta salvata in DB
-- [x] Chat testuale funzionante da browser, con storico conversazioni
-      e impostazioni (modello) persistite
-- [x] `pytest` verde (12/12)
-- [x] ADR-001 e ADR-002 documentati
-
-## Prossimo passo
-
-Milestone 2 — Voice Engine: modelli locali installati e prova STT/TTS offline
-superata; prova microfono ancora da eseguire. Istruzioni e criteri di accettazione
-in [docs/VOICE.md](docs/VOICE.md), decisioni in ADR-003.
-Comprende registrazione via WebSocket, trascrizioni parziali, revisione del
-testo finale e coda audio Piper per frasi. La conversazione continua resta
-da implementare.
+I test automatici sono isolati da DB e modelli di produzione. Gli script
+reali richiedono i servizi attivi e salvano report in `backend/data/voice-check/`.
+La prova MCP crea un proprio server loopback e un DB temporaneo, poi li chiude.
+Nel frontend `npm run build` controlla TypeScript e produce la build.

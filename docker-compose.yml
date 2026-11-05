@@ -14,6 +14,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        NATHION_EXTRAS: ${NATHION_EXTRAS:-dev}
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -27,6 +29,8 @@ services:
       - NATHION_COMPATIBLE_BASE_URL=${NATHION_COMPATIBLE_BASE_URL:-}
       - NATHION_COMPATIBLE_API_KEY=${NATHION_COMPATIBLE_API_KEY:-}
       - NATHION_MEMORY_EMBEDDING_MODEL=${NATHION_MEMORY_EMBEDDING_MODEL:-}
+      - NATHION_MCP_SERVERS=${NATHION_MCP_SERVERS:-{}}
+      - NATHION_AUTH_COOKIE_SECURE=${NATHION_AUTH_COOKIE_SECURE:-false}
       - NATHION_DEFAULT_LLM_PROVIDER=${NATHION_DEFAULT_LLM_PROVIDER:-ollama}
       - NATHION_CORS_ALLOW_ORIGINS=${NATHION_CORS_ALLOW_ORIGINS:-["http://localhost:4173","http://localhost:5173"]}
     extra_hosts:

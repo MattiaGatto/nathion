@@ -20,6 +20,7 @@ export function useChatSocket(conversationId: string | null, model: string | nul
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const onDoneRef = useRef<(() => void) | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     // Azzera lo stato della risposta precedente: senza questo reset, se
@@ -28,6 +29,7 @@ export function useChatSocket(conversationId: string | null, model: string | nul
     // stato del hook e potrebbe ricomparire nella conversazione sbagliata.
     setStreaming(null);
     setError(null);
+    inFlightRef.current = false;
 
     if (!conversationId || !model) {
       setStatus("idle");
@@ -39,7 +41,7 @@ export function useChatSocket(conversationId: string | null, model: string | nul
     socketRef.current = socket;
 
     socket.onopen = () => setStatus("open");
-    socket.onclose = () => setStatus("closed");
+    socket.onclose = () => { setStatus("closed"); setStreaming(null); inFlightRef.current = false; };
     socket.onerror = () => setStatus("error");
 
     socket.onmessage = (event) => {
@@ -50,30 +52,46 @@ export function useChatSocket(conversationId: string | null, model: string | nul
           done: false,
         }));
       } else if (data.type === "done") {
+        inFlightRef.current = false;
         setStreaming((prev) => (prev ? { ...prev, done: true } : prev));
         onDoneRef.current?.();
       } else if (data.type === "error") {
+        inFlightRef.current = false;
         setError(data.detail);
         setStreaming(null);
+      } else if (data.type === "cancelled") {
+        inFlightRef.current = false;
+        setStreaming(null);
+        onDoneRef.current?.();
       }
     };
 
     return () => {
+      socket.onopen = null; socket.onclose = null; socket.onerror = null; socket.onmessage = null;
       socket.close();
       socketRef.current = null;
+      onDoneRef.current = null;
     };
   }, [conversationId, model]);
 
   const sendMessage = useCallback((text: string, onDone?: () => void) => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
       setError("Connessione non ancora pronta, riprova tra un istante.");
-      return;
+      return false;
     }
+    if (inFlightRef.current) return false;
+    inFlightRef.current = true;
     setError(null);
     setStreaming({ content: "", done: false });
     onDoneRef.current = onDone ?? null;
-    socketRef.current.send(text);
+    socketRef.current.send(JSON.stringify({ type: "message", content: text }));
+    return true;
   }, []);
 
-  return { status, streaming, error, sendMessage };
+  const cancel = useCallback(() => {
+    if (socketRef.current?.readyState === WebSocket.OPEN)
+      socketRef.current.send(JSON.stringify({ type: "cancel" }));
+  }, []);
+
+  return { status, streaming, error, sendMessage, cancel };
 }
