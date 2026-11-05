@@ -15,8 +15,9 @@ I modelli Whisper, Piper e mxbai embedding sono già stati preparati su questo P
 ./start.ps1
 ```
 
-Apri [NATHION](http://localhost:4173). Accedi come **mattia** con la password
-iniziale nel file `backend/data/admin-initial-password.txt`, escluso da Git.
+Imposta `NATHION_ADMIN_EMAIL` nel file `.env` prima dell’avvio.
+Apri [NATHION](http://localhost:4173) e accedi con questa email. Su una nuova
+installazione trovi la password iniziale nel file `backend/data/admin-initial-password.txt`, escluso da Git.
 Al primo accesso scegli una nuova password (almeno 12 caratteri).
 `backend/data/access-token.txt` è una chiave operatore per recupero e script:
 non condividerla con gli invitati. Su una nuova installazione puoi cambiare
@@ -75,7 +76,7 @@ Dal backend installa gli extra necessari e avvia uvicorn su loopback:
 
 ```powershell
 cd backend
-uv sync --extra dev --extra voice --extra mcp
+uv sync --extra voice --extra mcp
 uv run uvicorn app.main:app --host 127.0.0.1 --reload
 ```
 
@@ -90,26 +91,13 @@ npm run dev
 Le API usano un cookie HttpOnly o Bearer per gli script. I segreti si
 configurano nell'ambiente, senza inserirli nel codice o nel repository.
 
-## Verifica
+## Uso desktop
 
-Dal backend con gli extra installati:
+Accedi al tuo account e apri una nuova conversazione. Premi il microfono al
+centro per armare l'ascolto e pronuncia «Ehi Nathion». Puoi dire il comando e
+la domanda nella stessa frase. NATHION trascrive la domanda, scrive la
+risposta nella chat e la legge. Dalla barra a sinistra puoi riaprire le
+conversazioni salvate. La foto in alto a destra apre profilo e disconnessione.
 
-```powershell
-python -m pytest -q
-python scripts/check_stack.py
-python scripts/check_product.py
-python scripts/check_memory.py
-python scripts/check_multi_voice.py
-python scripts/check_cancellation.py
-python scripts/check_mcp_http.py
-python scripts/check_schedules.py
-```
-
-I test automatici sono isolati da DB e modelli di produzione. Gli script
-reali richiedono i servizi attivi e salvano report in `backend/data/voice-check/`.
-La prova MCP crea un proprio server loopback e un DB temporaneo, poi li chiude.
-Nel frontend `npm run build` controlla TypeScript e produce la build.
-
-La verifica consolidata si esegue con `./scripts/verify.ps1`; aggiungi
-`-LocalAI` per le prove reali con container e modelli avviati. Il backup
-coerente del database si crea con `./scripts/backup.ps1`, anche con l'app attiva.
+`npm run build` compila il frontend. `./scripts/backup.ps1` salva una copia
+coerente del database anche mentre l'app è attiva.

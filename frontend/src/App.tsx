@@ -1,8 +1,8 @@
 import { stopAllAudio } from "./audioOwner";
 import { useCallback, useEffect, useState } from "react";
-import { api, type ConversationSummary } from "./api/client";
+import { api, workspaceRequest, type ConversationSummary } from "./api/client";
 import { ChatWindow } from "./components/ChatWindow";
-import { ProfilePanel } from "./components/ProfilePanel";
+import { ProfilePanel, type Profile } from "./components/ProfilePanel";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkspacePanel } from "./components/WorkspacePanel";
@@ -23,6 +23,13 @@ function Application() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+
+  useEffect(() => {
+    workspaceRequest<Profile>("auth/profile").then(setProfile).catch(() => {});
+  }, []);
+
+  const profileName = profile?.first_name || account?.display_name || "Profilo";
 
   const refreshConversations = useCallback(async () => {
     const list = await api.listConversations();
@@ -48,7 +55,7 @@ function Application() {
           // primo modello Ollama disponibile, cosi' l'app e' subito
           // utilizzabile senza dover passare dalle impostazioni. Se
           // Ollama non e' raggiungibile, semplicemente non si imposta
-          // nulla e la UI lo segnala (vedi Composer/EmptyState).
+          // nulla e la UI lo segnala (vedi la barra di scrittura).
           try {
             const models = await api.listModels();
             const preferred = models.find((item) => item.id === "llama3.2:3b") ?? models[0];
@@ -63,8 +70,11 @@ function Application() {
           }
         }
 
-        if (list.length > 0) {
-          setActiveId(list[0].id);
+        const candidate = list.find((conversation) => conversation.title === "Nuova conversazione");
+        const draft = candidate ? await api.getConversation(candidate.id) : null;
+        if (cancelled) return;
+        if (draft && draft.messages.length === 0) {
+          setActiveId(draft.id);
         } else {
           const created = await api.createConversation();
           if (cancelled) return;
@@ -134,10 +144,23 @@ function Application() {
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
 
-      <main className="relative min-w-0 flex-1 pt-10">
-        <button className="absolute right-4 top-2 text-xs text-nathion-accent" onClick={() => { stopAllAudio(); setWorkspaceOpen(true); }}>Centro di controllo</button>
-        <button className="absolute left-4 top-2 text-xs text-nathion-muted" onClick={() => { stopAllAudio(); setProfileOpen(true); }}>Profilo</button>
-        {profileOpen && <ProfilePanel onClose={() => setProfileOpen(false)} />}
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-nathion-border/70 px-4 sm:px-7">
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-semibold tracking-wide">NATHION</span>
+            <span className="hidden text-xs text-nathion-muted sm:block">Assistente vocale</span>
+          </div>
+          <div className="flex items-center gap-3 sm:gap-5">
+            <button className="text-xs text-nathion-muted hover:text-nathion-text" onClick={() => { stopAllAudio(); setWorkspaceOpen(true); }}>Agenti</button>
+            <button aria-label="Apri profilo" title="Apri profilo" className="flex items-center gap-2 rounded-full border border-nathion-border bg-nathion-panel px-2 py-1 text-sm hover:border-nathion-accent" onClick={() => { stopAllAudio(); setProfileOpen(true); }}>
+              {profile?.avatar
+                ? <img src={profile.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
+                : <span className="grid h-8 w-8 place-items-center rounded-full bg-nathion-accent/20 font-semibold text-nathion-accent">{profileName.slice(0, 1).toUpperCase()}</span>}
+              <span className="hidden pr-2 sm:inline">{profileName}</span>
+            </button>
+          </div>
+        </header>
+        {profileOpen && <ProfilePanel onClose={() => setProfileOpen(false)} onSaved={setProfile} />}
         {workspaceOpen && <WorkspacePanel model={model} onClose={() => setWorkspaceOpen(false)} />}
         {account?.role !== "admin" && !account?.hosted_access && <p role="status" className="px-4 py-2 text-sm text-amber-300">Il tuo spazio è attivo. L’uso dei modelli di questo PC attende l’approvazione dell’amministratore.</p>}
         {activeId && (

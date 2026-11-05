@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { api, type ConversationDetail, type MessageOut } from "../api/client";
 import { useChatSocket } from "../hooks/useChatSocket";
 import { Composer } from "./Composer";
-import { EmptyState } from "./EmptyState";
 import { MessageBubble } from "./MessageBubble";
 import { StatusIndicator } from "./StatusIndicator";
 import { TypingIndicator } from "./TypingIndicator";
@@ -76,7 +75,7 @@ export function ChatWindow({
   const awaitingFirstChunk = streaming !== null && !streaming.done && streaming.content === "";
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center justify-between border-b border-nathion-border bg-nathion-bg/80 px-6 py-3 backdrop-blur">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-medium text-nathion-text">
@@ -95,10 +94,8 @@ export function ChatWindow({
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {!hasMessages && !streaming ? (
-          <EmptyState onPick={handleSend} />
-        ) : (
+      <div ref={scrollRef} className={hasMessages || streaming || error ? "min-h-0 flex-1 overflow-y-auto" : "hidden"}>
+        {(hasMessages || streaming || error) && (
           <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
             {conversation?.messages.map((m) => <MessageBubble key={m.id} message={m} />)}
 
@@ -127,14 +124,29 @@ export function ChatWindow({
         )}
       </div>
 
+      <div className={hasMessages || streaming || error
+        ? "mx-auto w-full max-w-3xl shrink-0 px-4 sm:px-6"
+        : "flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-6 text-center"}>
+        {!hasMessages && !streaming && !error && <div className="mb-6">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-nathion-accent">Assistente vocale</p>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-5xl">Di cosa parliamo?</h2>
+          <p className="mt-3 text-sm text-nathion-muted">Attiva l’ascolto, poi di’ «Ehi Nathion» e fai la tua domanda.</p>
+        </div>}
+        <div className="w-full max-w-xl">
+          <HandsFreeVoice hero={!hasMessages && !streaming && !error} model={model} connected={status === "open"} response={streaming?.incomplete ? null : streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
+        </div>
+      </div>
+
       <div className="border-t border-nathion-border px-6 py-4">
         <div className="mx-auto max-w-3xl">
           {streaming && !streaming.done && <button className="mb-3 rounded-lg border border-nathion-border px-3 py-2 text-xs" onClick={cancel}>Interrompi risposta</button>}
-          <HandsFreeVoice model={model} connected={status === "open"} response={streaming?.incomplete ? null : streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
+          <details className="mb-3">
+            <summary className="cursor-pointer text-xs text-nathion-muted">Registrazione manuale e memoria</summary>
           <VoiceControls key={conversationId} disabled={status !== "open" || Boolean(streaming && !streaming.done)}
             onTranscript={(text) => setVoiceDraft({ text })}
             reply={conversation?.messages.filter((m) => m.role === "assistant").at(-1)?.content ?? ""} />
           <MemorySuggestions key={`memory-${conversationId}`} conversationId={conversationId} model={model} />
+          </details>
           <Composer
             draft={voiceDraft}
             disabled={status !== "open" || Boolean(streaming && !streaming.done)}

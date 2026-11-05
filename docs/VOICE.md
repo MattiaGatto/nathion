@@ -27,7 +27,7 @@ docker compose -f docker-compose.yml -f docker-compose.voice.yml up --build
 Per avvio senza Docker, nel backend usa Python 3.12+:
 
 ```powershell
-pip install -e ".[dev,voice]"
+pip install -e ".[voice,mcp]"
 $env:NATHION_VOICE_ENABLED = "true"
 $env:NATHION_WHISPER_MODEL_PATH = "../models/whisper"
 $env:NATHION_PIPER_MODEL_PATH = "../models/voice.onnx"
@@ -76,50 +76,14 @@ nativo già avviato può finire dopo lo stop, ma non viene accodato altro audio.
 I test su segnali e formati sintetici non sostituiscono una prova del microfono
 su Android, compresi eco, rumore, Bluetooth, sospensione e riconnessione.
 
-## Verifiche ripetibili
+## Parola di attivazione su desktop
 
-Dal backend con le dipendenze vocali installate:
-
-```powershell
-python scripts/check_voice.py
-python scripts/check_stack.py
-```
-
-Il primo controllo funziona offline e verifica Piper → WAV → Silero VAD →
-Whisper. Il secondo richiede i container e Ollama attivi: usa il WebSocket
-audio, crea una conversazione "Verifica voce locale", verifica la risposta
-persistita e riceve i WAV della sintesi. Non usa il microfono. Audio e report
-di questi controlli espliciti sono in `backend/data/voice-check/` e sono
-esclusi da Git. Le registrazioni normali dell'app non sono salvate.
-
-## Criteri di accettazione
-
-- [ ] Microfono reale: frase italiana trascritta e modificabile prima dell'invio.
-- [x] Trascrizione inviata alla chat con risposta Ollama reale persistita.
-- [ ] Piper produce una risposta udibile, arrestabile dal browser.
-- [ ] Cambio conversazione smette di registrare/riprodurre e ignora risultati vecchi.
-- [x] Motore STT/TTS offline con modelli già presenti (audio sintetico).
-- [x] Docker Compose vocale avviato e verificato tramite API.
-
-I test automatici coprono contratti API, disattivazione, errori, validazione
-e limiti di upload con adattatori sostituiti. Non dimostrano accuratezza STT,
-qualità TTS, permessi microfono o funzionamento dei modelli reali.
-
-Verifica offline del 2 novembre 2026: frase italiana di 3,44 s generata
-da Piper e trascritta da Whisper Tiny. Primo caricamento incluso:
-18,83 s sintesi, 9,34 s trascrizione. Il risultato conserva la frase di
-test, ma omette il saluto iniziale: non è una misura di accuratezza generale.
-Motori: faster-whisper 1.2.1, Piper 1.8.0, PyAV 16.1.0 su Windows CPU.
-
-Verifica del 5 novembre 2026: percorso WebSocket STT → Ollama llama3.2:3b
-→ persistenza → WebSocket TTS superato. Risposta sintetizzata: "Sono pronto
-a rispondere alle tue domande!", WAV ricevuto di 90668 byte. Report locale
-in `backend/data/voice-check/stack-report.json`. Prova microfono e ascolto
-dal browser restano da eseguire.
-
-Non ancora implementati: fine turno automatica, conversazione continua,
-barge-in automatico e autenticazione. Le porte Docker sono vincolate a
-localhost. Non esporre il servizio a rete locale o Internet in questo stato.
+Premi il microfono una volta per armare l'ascolto e autorizzalo nel browser.
+Mentre la pagina resta visibile, il rilevatore invia a Whisper sul PC solo
+i segmenti in cui rileva voce. Dopo «Ehi Nathion» puoi fare la domanda
+nello stesso turno oppure nel turno successivo. Una volta iniziata la
+conversazione, si applica la chiusura dopo 20 secondi in ascolto senza voce.
+Per disarmare, premi di nuovo il microfono o cambia pagina.
 
 Riferimenti: [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
 [Piper Python API](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_PYTHON.md).

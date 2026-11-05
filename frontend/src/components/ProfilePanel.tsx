@@ -2,10 +2,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import { workspaceRequest } from "../api/client";
 import { PasswordForm, useAccount } from "./AccessGate";
 
-interface Profile {
+export interface Profile {
   first_name: string;
   last_name: string;
   address: string;
+  avatar: string;
 }
 
 const fields = [
@@ -14,7 +15,7 @@ const fields = [
   { key: "address", label: "Indirizzo", autocomplete: "street-address", limit: 300 },
 ] as const;
 
-export function ProfilePanel({ onClose }: { onClose: () => void }) {
+export function ProfilePanel({ onClose, onSaved }: { onClose: () => void; onSaved: (profile: Profile) => void }) {
   const account = useAccount();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [notice, setNotice] = useState("");
@@ -37,11 +38,34 @@ export function ProfilePanel({ onClose }: { onClose: () => void }) {
         body: JSON.stringify(profile),
       });
       setProfile(saved);
+      onSaved(saved);
       setNotice("Profilo salvato.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Salvataggio fallito.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function chooseAvatar(file: File) {
+    setError("");
+    if (file.size > 8 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Scegli una foto JPEG, PNG o WebP fino a 8 MB.");
+      return;
+    }
+    try {
+      const image = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 160;
+      const context = canvas.getContext("2d");
+      if (!context) { image.close(); throw new Error("Immagine non disponibile"); }
+      const side = Math.min(image.width, image.height);
+      context.drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, 160, 160);
+      image.close();
+      const avatar = canvas.toDataURL("image/jpeg", 0.82);
+      setProfile((current) => current && { ...current, avatar });
+    } catch {
+      setError("Impossibile leggere questa foto.");
     }
   }
 
@@ -63,6 +87,18 @@ export function ProfilePanel({ onClose }: { onClose: () => void }) {
         <button onClick={onClose}>Chiudi</button>
       </header>
       {profile && <form className="space-y-4 rounded-2xl border border-nathion-border bg-nathion-panel p-5" onSubmit={save}>
+        <div className="flex items-center gap-4">
+          {profile.avatar
+            ? <img className="h-16 w-16 rounded-full object-cover" src={profile.avatar} alt="Foto profilo" />
+            : <span aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full bg-nathion-accent/20 text-xl text-nathion-accent">{(profile.first_name || account?.username || "N").slice(0, 1).toUpperCase()}</span>}
+          <div className="space-y-2">
+            <label className="block text-sm">Foto profilo
+              <input className="block max-w-full text-xs" type="file" accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => { const file = event.target.files?.[0]; if (file) void chooseAvatar(file); }} />
+            </label>
+            {profile.avatar && <button type="button" className="text-xs text-nathion-muted" onClick={() => setProfile({ ...profile, avatar: "" })}>Rimuovi foto</button>}
+          </div>
+        </div>
         {fields.map(({ key, label, autocomplete, limit }) => <label key={key} className="block">
           {label}
           <input value={profile[key]} autoComplete={autocomplete} maxLength={limit}

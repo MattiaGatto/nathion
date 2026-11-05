@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     voice_profiles: dict[str, str] = {}
     admin_username: str = Field(default="mattia", pattern=r"^[a-z0-9][a-z0-9_.-]{2,31}$")
     admin_display_name: str = "Mattia"
+    admin_email: str = ""
+    personal_mode: bool = True
+    oauth_origin: str = "http://localhost:4173"
+    google_client_id: str = ""
+    google_client_secret: SecretStr = SecretStr("")
+    google_admin_subject: str = ""
+    github_client_id: str = ""
+    github_client_secret: SecretStr = SecretStr("")
+    github_admin_id: str = ""
     auth_enabled: bool = True
     auth_token_file: str = "./data/access-token.txt"
     auth_cookie_secure: bool = False

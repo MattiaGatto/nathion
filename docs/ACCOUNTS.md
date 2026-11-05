@@ -6,7 +6,8 @@ creati non vengono rinominati da una variabile d'ambiente.
 
 ## Primo accesso
 
-`./start.ps1` copia la password iniziale nel file ignorato
+Accedi con l'indirizzo configurato in `NATHION_ADMIN_EMAIL`. Su una nuova
+installazione, `./start.ps1` copia la password iniziale nel file ignorato
 `backend/data/admin-initial-password.txt`. La password deve essere cambiata
 prima di usare le funzioni. Il file nel container viene eliminato dopo il
 cambio; la copia locale può essere rimossa, perché non è più valida.
@@ -21,6 +22,9 @@ solo i dati personali; l'amministratore ha un export esplicito per account.
 Il proprietario della macchina può comunque leggere il database e i backup.
 
 ## Invitare un ospite sul proprio server
+
+La modalità personale è attiva per impostazione predefinita. Per abilitare
+gli inviti, imposta `NATHION_PERSONAL_MODE=false` in `.env` e riavvia il backend.
 
 1. Apri **Centro di controllo → Utenti e accesso al server**.
 2. Crea un invito: dura sette giorni ed è monouso. Copia il link privato,

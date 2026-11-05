@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-ARG NATHION_EXTRAS=dev
+ARG NATHION_EXTRAS=mcp
 
 # Dipendenze di sistema minime (nessuna, per ora — niente build tool
 # non necessari, coerente con "non introdurre dipendenze non necessarie")

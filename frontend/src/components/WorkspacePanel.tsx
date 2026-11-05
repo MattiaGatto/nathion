@@ -14,7 +14,8 @@ interface ScheduleItem { id: string; prompt: string; model: string; next_run_at:
 interface Props { model: string | null; onClose: () => void; }
 
 export function WorkspacePanel({ model, onClose }: Props) {
-  const admin = useAccount()?.role === "admin";
+  const account = useAccount();
+  const admin = account?.role === "admin";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -199,7 +200,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
   return <section className="absolute inset-0 z-30 overflow-y-auto bg-nathion-bg p-5 text-nathion-text" aria-label="Centro di controllo">
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-xl">Centro di controllo</h1><div className="flex gap-2"><button className={button} onClick={exportData}>Esporta dati</button><button className={button} onClick={onClose}>Torna alla chat</button></div></header>
-      <AccountsPanel />
+      {!account?.personal_mode && <AccountsPanel />}
       {error && <p role="alert" className="text-red-300">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{agents.map((a) => <article key={a.id} className="rounded-xl border border-nathion-border p-4"><h2>{a.name}</h2><p className="text-sm text-nathion-muted">{a.description}</p><p className="mt-2 text-xs">Skills: {a.skills.join(", ") || "nessuna"}</p><label className="mt-3 block text-xs">Modello preferito<input key={a.model ?? "default"} aria-label={`Modello ${a.name}`} defaultValue={a.model ?? ""} placeholder="Usa modello della chat" className="mt-1 w-full rounded bg-nathion-surface p-2" onBlur={(e) => { if (e.target.value.trim() !== (a.model ?? "")) configure(a, e.target.value); }} /></label></article>)}</div>
       <div className="flex flex-wrap gap-3">{agents.map((a) => <label key={a.id} className="text-xs">Voce · {a.name}<select aria-label={`Voce ${a.name}`} className="ml-2 rounded bg-nathion-panel p-2" value={a.voice_profile} onChange={(e) => configure(a, a.model ?? "", e.target.value)}>{!voiceProfiles.includes(a.voice_profile) && <option value={a.voice_profile}>Non disponibile: {a.voice_profile}</option>}{voiceProfiles.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile}</option>)}</select></label>)}</div>

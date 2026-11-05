@@ -16,28 +16,12 @@ richiedono dispositivi o servizi esterni.
 | Tool engine | Registry, calcolatrice/orologio, strumenti nei piani validati, MCP HTTP con allowlist, consenso e traccia | MCP richiede server scelti dall'operatore; nessuna shell o navigazione web arbitraria |
 | Operazioni | Programmazioni persistenti, stato aggregato, cancellazione, export e backup SQLite verificato | PC acceso necessario; nessuna sincronizzazione fra installazioni indipendenti |
 
-Verifiche automatiche del 5 novembre 2026: 90 test backend isolati, 7 test
-frontend su turni, audio e suddivisione delle frasi; compilazione Vite 8 e
-controllo npm senza vulnerabilità segnalate. La schermata login è stata
-controllata nel browser a dimensione desktop e a 390 px, senza overflow.
+Il desktop offre login, storico delle chat, profilo con foto e un microfono
+centrale. La parola «Ehi Nathion» funziona durante l'ascolto abilitato nel
+browser. La risposta appare in chat e viene letta con Piper.
 
-`./scripts/verify.ps1 -LocalAI` esegue anche prove reali con Ollama,
-Whisper/Piper, Nginx, workflow, ricerca semantica, cancellazione, MCP locale,
-worker, proposte e account. I report sono in `backend/data/voice-check/` e
-rimangono esclusi da Git. Le prove sintetiche non sostituiscono il microfono.
-La verifica delle sessioni server su loopback non certifica un cookie browser
-su HTTPS: il report degli account distingue esplicitamente le due cose.
-
-Sul PC sono passati il ciclo Whisper → Ollama → Piper su audio sintetico,
-il workflow reale con due agenti, la ricerca semantica, le due voci, la
-cancellazione, il test MCP su un server locale temporaneo e il worker delle
-programmazioni. Sono passati anche piano strutturato e suggerimenti con
-llama3.2:3b, il provider compatibile su Ollama /v1 e il flusso reale ospite:
-approvazione, modello consentito, dati isolati e sessione revocata. Il backup
-manuale ha superato `PRAGMA integrity_check` ed è stato copiato sul PC.
 Il gateway APK usa la rete privata Tailscale con un certificato dedicato.
 Il collaudo HTTPS dal PC è passato. Serve una prova dal telefono su rete mobile.
-
 
 La migrazione multiutente crea un backup prima di modificare lo schema;
 i dati precedenti restano di Mattia. Gli invitati hanno dati separati,

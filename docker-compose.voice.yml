@@ -3,7 +3,7 @@ services:
   backend:
     build:
       args:
-        NATHION_EXTRAS: ${NATHION_EXTRAS:-dev,voice}
+        NATHION_EXTRAS: ${NATHION_EXTRAS:-voice,mcp}
     environment:
       NATHION_VOICE_ENABLED: "true"
       NATHION_WHISPER_MODEL_PATH: ${NATHION_WHISPER_MODEL_PATH:-/models/whisper}

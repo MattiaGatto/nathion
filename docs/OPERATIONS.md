@@ -5,7 +5,8 @@ docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
 docker compose cp backend:/app/data/access-token.txt ./backend/data/access-token.txt
 ```
 
-Accedi come `mattia` con la password iniziale copiata da `./start.ps1` in
+Imposta `NATHION_ADMIN_EMAIL` in `.env` e accedi con quell’indirizzo. Su una nuova
+installazione, la password iniziale viene copiata da `./start.ps1` in
 `backend/data/admin-initial-password.txt`. Il primo accesso richiede di
 sostituirla. Nelle installazioni nuove nome e nome visualizzato si configurano
 con `NATHION_ADMIN_USERNAME` e `NATHION_ADMIN_DISPLAY_NAME`.
@@ -21,8 +22,7 @@ avvenuti. Le chiamate vocali ricontrollano autorizzazioni a ogni segmento.
 La chiave operatore `backend/data/access-token.txt` resta per gli script locali
 e per il recupero amministratore. Consente pieno accesso: non condividerla.
 Gli invitati usano esclusivamente i propri account. Vedi [Account](ACCOUNTS.md).
-L'autenticazione è attiva per default; i test la disattivano solo in fixture
-isolate. Il backend verifica l'origine di scritture e WebSocket.
+L'autenticazione è attiva per default. Il backend verifica l'origine di scritture e WebSocket.
 
 Il Centro di controllo contiene agenti, workflow e memoria. La chat ordinaria
 resta il percorso diretto al modello; il pulsante Avvia attività usa realmente
@@ -36,6 +36,27 @@ NATHION_OLLAMA_CONTEXT_SIZE (default 2048) e NATHION_OLLAMA_MAX_OUTPUT_TOKENS
 (default 512) regolano risorse e lunghezza. Se il provider segnala un taglio
 per limite token, il workflow fallisce esplicitamente invece di dichiarare
 completo del codice troncato. Aumenta i limiti in .env solo in base alle risorse.
+
+## Modalità personale e accesso esterno
+
+Con `NATHION_PERSONAL_MODE=true` può accedere solo l’amministratore. Imposta
+`false` per riaprire in futuro l’accesso ospite e gli inviti. L’amministratore
+continua ad accedere via email.
+
+Google e GitHub sono opzionali. Registra un client web per ciascun provider e
+configura `NATHION_OAUTH_ORIGIN` con l’origine del frontend, presente anche in
+`NATHION_CORS_ALLOW_ORIGINS`. Per il PC l’origine predefinita è
+`http://localhost:4173`. Registra i callback esatti
+`/api/auth/oauth/google/callback` e `/api/auth/oauth/github/callback` su
+quell’origine. Compila in `.env`:
+
+- Google: `NATHION_GOOGLE_CLIENT_ID`, `NATHION_GOOGLE_CLIENT_SECRET` e
+  `NATHION_GOOGLE_ADMIN_SUBJECT` (il valore `sub` dell’account autorizzato).
+- GitHub: `NATHION_GITHUB_CLIENT_ID`, `NATHION_GITHUB_CLIENT_SECRET` e
+  `NATHION_GITHUB_ADMIN_ID` (l’ID numerico dell’account autorizzato).
+
+I pulsanti si attivano dopo la configurazione e il riavvio del backend.
+Il primo cambio della password iniziale si completa con email e password.
 
 ## Smartphone e PWA
 
@@ -64,20 +85,6 @@ I modelli sono nella directory models sull'host, montata in sola lettura.
 La cancellazione di una conversazione elimina anche i messaggi; quella di
 una memoria è esplicita nel Centro di controllo.
 
-## Verifica
-
-Con dipendenze dev/voice installate nel backend:
-
-```powershell
-python -m pytest -q
-python scripts/check_stack.py
-python scripts/check_product.py
-```
-
-Gli script reali richiedono i container attivi e la copia locale della chiave.
-Il secondo usa audio sintetico. Il terzo verifica accesso, proxy, assets PWA,
-skills, memoria e due agenti con dipendenza su Ollama. I report sono in data.
-
 ## Provider e memoria semantica
 
 Un server compatibile si abilita esplicitamente in .env con
@@ -85,8 +92,7 @@ NATHION_COMPATIBLE_BASE_URL, per esempio http://host.docker.internal:1234/v1
 per un LM Studio locale nell'host. Se serve, aggiungi NATHION_COMPATIBLE_API_KEY.
 Ricrea il backend; il provider appare nelle impostazioni. Non sono stati
 configurati servizi cloud. Il contratto è testato, ma LM Studio/vLLM non sono
-stati avviati per il collaudo reale. `check_compatible.py` verifica invece
-lo stesso adattatore sul vero endpoint Ollama /v1 locale.
+stati avviati per il collaudo reale. L’adattatore è stato provato su Ollama /v1.
 
 NATHION_MEMORY_EMBEDDING_MODEL=mxbai-embed-large:latest è attivo nel .env di
 questo PC e usa il modello Ollama già installato. Lascia vuoto per sola ricerca
@@ -95,9 +101,7 @@ indicizzare quelle mancanti, dieci alla volta. Modifica e cancellazione
 invalidano o rimuovono i vettori. La ricerca ripiega su BM25 quando necessario,
 indicando il percorso usato nell'header X-Memory-Retrieval e nelle tracce.
 
-`python scripts/check_memory.py` prova con modello reale la ricerca semantica
-di una nota temporanea e la elimina alla fine. I modelli embedding non sono
-scaricati dalle richieste dell'app. Le memorie passate agli agenti rimangono
+I modelli embedding vengono configurati dall’operatore. Le memorie passate agli agenti rimangono
 verificabili con fonte e distinzione tra fatti e inferenze.
 
 ## Proposte, limiti e manutenzione

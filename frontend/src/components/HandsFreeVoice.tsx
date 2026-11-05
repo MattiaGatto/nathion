@@ -4,7 +4,7 @@ import { api, workspaceRequest } from "../api/client";
 import { claimAudio, releaseAudio } from "../audioOwner";
 import { TurnDetector, wavAudio, nextPhrase } from "../voiceSession";
 
-interface Props { model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
+interface Props { hero?: boolean; model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
 const pcCommands = [
   { pattern: /^apri (?:la )?calcolatrice(?: sul pc)?[.!]?$/i, tool: "open_calculator", label: "Apri Calcolatrice sul PC" },
   { pattern: /^apri (?:il )?blocco note(?: sul pc)?[.!]?$/i, tool: "open_notepad", label: "Apri Blocco note sul PC" },
@@ -25,7 +25,7 @@ export function HandsFreeVoice(props: Props) {
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
   const [bargeIn, setBargeIn] = useState(false);
   const interruptible = useRef(false); interruptible.current = bargeIn;
-  const [wakeEnabled, setWakeEnabled] = useState(false);
+  const [wakeEnabled, setWakeEnabled] = useState(true);
   const [voiceProfile, setVoiceProfile] = useState("default");
   const [profiles, setProfiles] = useState<string[]>(["default"]);
   const selectedVoice = useRef(voiceProfile);
@@ -49,14 +49,13 @@ export function HandsFreeVoice(props: Props) {
   const transcriptReceived = useRef(false);
   function resetIdle() {
     clearTimeout(idleTimeout.current);
+    if (waitingForWake.current) return;
     idleTimeout.current = window.setTimeout(() => {
       stop();
-      setStatus(waitingForWake.current
-        ? "Attivazione vocale disarmata dopo due minuti."
-        : transcriptReceived.current
+      setStatus(transcriptReceived.current
         ? "Microfono chiuso dopo 20 secondi di inattività."
         : "Microfono chiuso dopo 20 secondi. Nessuna frase riconosciuta.");
-    }, waitingForWake.current ? 120_000 : 20_000);
+    }, 20_000);
   }
 
   function stopPlayback() {
@@ -313,22 +312,31 @@ export function HandsFreeVoice(props: Props) {
   }
 
   return (
-    <section className="mb-3 space-y-3 rounded-xl border border-nathion-border p-3 text-xs" aria-label="Conversazione vocale">
-      <div className="flex flex-wrap items-center gap-3">
+    <section className={props.hero ? "space-y-4 pb-3 text-xs" : "mb-2 space-y-2 rounded-xl border border-nathion-border p-3 text-xs"} aria-label="Conversazione vocale">
+      <div className={props.hero ? "flex flex-col items-center gap-3" : "flex flex-wrap items-center gap-3"}>
         <button
-          className={active
+          className={props.hero ? "voice-orb" : active
             ? "rounded-lg border border-nathion-border px-4 py-3 text-sm"
             : "rounded-lg bg-nathion-accent px-4 py-3 text-sm font-medium text-nathion-bg disabled:opacity-40"}
+          aria-label={active ? "Ferma il microfono" : "Attiva ascolto vocale"}
+          aria-pressed={active}
           disabled={!props.connected && !active}
           onClick={toggleSession}
         >
-          {active ? "Termina conversazione vocale" : "Parla con NATHION"}
+          {props.hero
+            ? <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                {active ? <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" /> : <>
+                  <rect x="9" y="3" width="6" height="12" rx="3" />
+                  <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-3 0h6" />
+                </>}
+              </svg>
+            : active ? "Ferma microfono" : "Attiva ascolto"}
         </button>
-        <span role="status">{status}</span>
+        <span role="status">{status || (props.hero ? "Attiva ascolto" : "")}</span>
       </div>
       <details className="space-y-2">
         <summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary>
-        <p className="text-nathion-muted">Il microfono si chiude dopo 20 secondi di inattività. La risposta in corso può terminare.</p>
+        <p className="text-nathion-muted">In attesa della parola chiave, il microfono resta attivo nella pagina. L’audio viene trascritto sul PC. Dopo l’attivazione, la sessione termina dopo 20 secondi di inattività.</p>
         <label className="block">
           <input type="checkbox" disabled={active} checked={wakeEnabled} onChange={(e) => setWakeEnabled(e.target.checked)} />
           {" "}Attiva con «Ehi Nathion» mentre l’app è aperta

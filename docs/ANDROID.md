@@ -26,8 +26,8 @@ per frasi. In **Opzioni vocali** puoi scegliere la voce Paola o Riccardo e
 abilitare l'interruzione parlando. Per la parola di attivazione seleziona
 **Attiva con Ehi Nathion**, avvia la sessione e pronuncia la parola chiave,
 anche seguita dalla richiesta. L'ascolto usa Whisper sul PC e funziona con
-l'app in primo piano. La sessione si disarma dopo due minuti di inattività
-prima dell'attivazione o 20 secondi in ascolto dopo l'attivazione.
+l'app in primo piano. Dopo l'attivazione, la sessione si chiude dopo
+20 secondi di inattività in ascolto.
 
 Sul PC di Mattia è attivo Whisper Base. In un confronto sulla stessa frase
 sintetica ha riconosciuto il testo corretto. Per prepararlo su un'altra
@@ -85,7 +85,7 @@ installazioni che usano Serve al posto del gateway APK sulla porta 8443.
    Funnel e non apre il servizio al pubblico. Se Tailscale propone modifiche
    a una configurazione esistente, rivedile prima di confermare.
 4. Apri l'indirizzo mostrato in Chrome Android con Tailscale connesso e usa
-   nome utente e password. Per Mattia, al primo accesso usa la password in
+   email e password. Su una nuova installazione, al primo accesso usa la password in
    `backend/data/admin-initial-password.txt` e sostituiscila. Non usare o
    condividere la chiave operatore con gli ospiti.
 5. Consenti il microfono, registra una frase, controlla la trascrizione e inviala.

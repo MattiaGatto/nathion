@@ -13,6 +13,7 @@ from app.core.logging import configure_logging
 from app.core import ownership  # Register tenant guards before serving requests
 from app.db.session import init_db, SessionLocal, get_db
 from app.db.models import Run, ToolAction, Schedule
+from app.core.oauth import router as oauth_router
 from app.core.auth import AuthenticationMiddleware, initialize_auth, router as auth_router
 
 configure_logging()
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(voice_socket.router)
     app.include_router(workspace.router)
     app.include_router(auth_router)
+    app.include_router(oauth_router)
     app.include_router(tools.router)
     app.include_router(schedules.router)
     app.include_router(proposals.router)

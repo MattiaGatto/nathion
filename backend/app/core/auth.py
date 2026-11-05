@@ -1,6 +1,7 @@
 """Local accounts with explicit hosting grants and revocable browser sessions."""
 import hashlib
 import json
+import re
 import secrets
 import time
 from collections import defaultdict, deque
@@ -107,7 +108,9 @@ def resolve(headers, db):
     if not session or session.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
         return None
     user = db.get(User, session.user_id)
-    return principal(user, session.operator, session.token_hash) if user and user.status == "active" else None
+    if not user or user.status != "active" or (get_settings().personal_mode and user.id != "owner"):
+        return None
+    return principal(user, session.operator, session.token_hash)
 
 class AuthenticationMiddleware:
     def __init__(self, app):
@@ -122,7 +125,9 @@ class AuthenticationMiddleware:
             headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
             mutation = scope["type"] == "websocket" or scope.get("method") not in {"GET", "HEAD", "OPTIONS"}
             path = scope["path"]
-            public = path in {"/api/auth/status", "/api/auth/login", "/api/auth/register", "/api/auth/logout"} or scope.get("method") == "OPTIONS"
+            public = path in {"/api/auth/status", "/api/auth/login", "/api/auth/register", "/api/auth/logout"} or (
+                scope.get("method") == "GET" and path.startswith("/api/auth/oauth/")
+            ) or scope.get("method") == "OPTIONS"
             with database(factory) as db:
                 current = resolve(headers, db)
             identity.set(current)
@@ -185,6 +190,7 @@ def throttle(request, username=""):
     attempts.append(now)
 
 class LoginIn(BaseModel):
+    email: str = Field(default="", max_length=254)
     username: str = Field(default="", max_length=32)
     password: str = Field(default="", max_length=200)
     token: str = Field(default="", max_length=200)
@@ -198,20 +204,29 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=12, max_length=200)
 
 @router.get("/status")
-def status():
+def status(request: Request):
+    from app.core.oauth import available_providers
+
     current = identity.get()
     return {"enabled": get_settings().auth_enabled, "authenticated": current is not None,
+            "personal_mode": get_settings().personal_mode, "oauth_providers": available_providers(request),
             "user": {key: value for key, value in current.__dict__.items() if key not in {"session_hash", "operator"}} if current else None}
 
 @router.post("/login")
 def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
-    throttle(request, body.username)
-    owner = ensure_owner(db)
+    settings = get_settings()
+    email = body.email.strip().lower()
+    username = body.username.strip().lower()
+    throttle(request, email or username)
     operator = bool(body.token) and secrets.compare_digest(body.token, access_token())
-    user = owner if operator else db.query(User).filter_by(username=body.username.lower()).first()
-    valid = operator or verify_password(user.password_hash if user else _dummy, body.password)
+    user = None
+    if operator or (re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) and email == settings.admin_email.strip().lower()):
+        user = ensure_owner(db)
+    elif not settings.personal_mode and not email and re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,31}", username):
+        user = db.query(User).filter(User.username == username, User.id != "owner").first()
+    valid = operator or (len(body.password) >= 12 and verify_password(user.password_hash if user else _dummy, body.password))
     if not valid or not user or user.status != "active":
-        raise HTTPException(401, "Credenziali non valide o account in attesa di approvazione")
+        raise HTTPException(401, "Email o password non valida.")
     set_session(user, request, response, db, operator)
     return {"authenticated": True, "user": user_out(user)}
 
@@ -238,6 +253,8 @@ def password(body: PasswordIn, request: Request, response: Response, db: Session
 
 @router.post("/register", status_code=201)
 def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
+    if get_settings().personal_mode:
+        raise HTTPException(403, "Registrazione disattivata")
     throttle(request, body.username)
     invitation = db.query(Invitation).filter_by(token_hash=digest(body.invitation)).first()
     now = datetime.now(timezone.utc)
@@ -288,6 +305,8 @@ def invitations(db: Session = Depends(get_db)):
 
 @router.post("/admin/invitations", status_code=201)
 def invite(body: InviteIn, db: Session = Depends(get_db)):
+    if get_settings().personal_mode:
+        raise HTTPException(403, "Inviti disattivati")
     token = secrets.token_urlsafe(32)
     row = Invitation(token_hash=digest(token), label=body.label, expires_at=datetime.now(timezone.utc) + timedelta(days=body.days))
     db.add(row); db.commit(); db.refresh(row)
@@ -388,6 +407,7 @@ class ProfileIn(BaseModel):
     first_name: str = Field(default="", max_length=80)
     last_name: str = Field(default="", max_length=80)
     address: str = Field(default="", max_length=300)
+    avatar: str = Field(default="", max_length=65536, pattern=r"^(?:data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2})?$")
 
 
 @router.get("/profile", response_model=ProfileIn)
