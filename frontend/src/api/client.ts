@@ -60,8 +60,8 @@ export async function workspaceRequest<T>(path: string, options?: RequestInit): 
 export const api = {
   voiceStatus: () => fetch(`${API_BASE_URL}/api/voice/status`).then((r) =>
     handle<{ enabled: boolean; whisper_model_present: boolean; piper_model_present: boolean; profiles: string[] }>(r)),
-  transcribe: (audio: Blob, signal?: AbortSignal, wakeHint = false) =>
-    fetch(`${API_BASE_URL}/api/voice/transcribe${wakeHint ? "?wake_hint=true" : ""}`, {
+  transcribe: (audio: Blob, signal?: AbortSignal, wakeHint = false, agentsHint = false) =>
+    fetch(`${API_BASE_URL}/api/voice/transcribe${wakeHint || agentsHint ? `?wake_hint=${wakeHint}&agents_hint=${agentsHint}` : ""}`, {
       method: "POST", headers: { "Content-Type": audio.type }, body: audio, signal,
     }).then((r) => handle<{ text: string }>(r)),
   speak: async (text: string, signal?: AbortSignal, profile = "default") => {

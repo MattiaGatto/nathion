@@ -207,11 +207,11 @@ export function HandsFreeVoice(props: Props) {
         } else if (action === "end") {
           const recording = frames; frames = []; preRoll = []; processing = true; setStatus("Trascrizione locale…");
           const abort = new AbortController(); controller.current = abort;
-          api.transcribe(wavAudio(recording, rate), abort.signal, waitingForWake.current).then(({ text: recognized }) => {
+          api.transcribe(wavAudio(recording, rate), abort.signal, waitingForWake.current, true).then(({ text: recognized }) => {
             if (!running.current || current !== generation.current) return;
             let text = recognized.trim();
             if (waitingForWake.current) {
-              const wake = /^(?:(?:(?:ehi|hey|ei|e|ciao)[,\s]+)?(?:nathion|nation|nazione)|(?:ehi|hey|ei|e)[,\s]+nei\s+ton)\b[\s,.!?:-]*/iu.exec(text);
+              const wake = /^(?:(?:(?:ehi|hey|ei|e|ciao)['’,\s]+)?(?:nathion|nation|nazione)|(?:ehi|hey|ei|e)[,\s]+nei\s+ton)\b[\s,.!?:-]*/iu.exec(text);
               if (!wake) {
                 setStatus("In attesa di «Ehi Nathion»…");
                 resetIdle();

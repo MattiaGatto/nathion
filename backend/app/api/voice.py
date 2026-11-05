@@ -8,11 +8,14 @@ from functools import lru_cache, partial
 from pathlib import Path
 from threading import Lock
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
+from sqlalchemy.orm import Session
+
 from app.core.config import get_settings
+from app.db.session import get_db
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 logger = logging.getLogger(__name__)
@@ -67,7 +70,7 @@ def piper_voice(profile: str = "default"):
     return PiperVoice.load(str(path))
 
 
-def transcribe_audio(audio: bytes, wake_hint: bool = False) -> str:
+def transcribe_audio(audio: bytes, wake_hint: bool = False, agent_names: tuple[str, ...] = ()) -> str:
     with _model_lock:
         model = whisper_model()
         # Decode first to bound duration before expensive inference.
@@ -76,9 +79,13 @@ def transcribe_audio(audio: bytes, wake_hint: bool = False) -> str:
         samples = decode_audio(io.BytesIO(audio), sampling_rate=16000)
         if len(samples) > 16000 * 60:
             raise ValueError("Registrazione oltre 60 secondi")
+        prompt = "Ehi Nathion." if wake_hint or agent_names else ""
+        if agent_names:
+            prompt += f" Chiedi a {agent_names[0]}."
+        hotwords = ", ".join(("Nathion", *agent_names)) if agent_names else None
         segments, _ = model.transcribe(samples, language=get_settings().voice_language,
                                        vad_filter=True, beam_size=1,
-                                       initial_prompt="Ehi Nathion." if wake_hint else None)
+                                       initial_prompt=prompt or None, hotwords=hotwords)
         return " ".join(segment.text.strip() for segment in segments).strip()
 
 
@@ -129,7 +136,7 @@ async def execute(function, argument):
 
 
 @router.post("/transcribe")
-async def transcribe(request: Request, wake_hint: bool = False):
+async def transcribe(request: Request, wake_hint: bool = False, agents_hint: bool = False, db: Session = Depends(get_db)):
     require_voice()
     if request.headers.get("content-type", "").split(";")[0] not in {
         "audio/webm", "audio/ogg", "audio/mp4", "audio/wav", "audio/x-wav"
@@ -142,7 +149,12 @@ async def transcribe(request: Request, wake_hint: bool = False):
         audio.extend(chunk)
     if not audio:
         raise HTTPException(422, "Registrazione vuota")
-    text = await execute(partial(transcribe_audio, wake_hint=wake_hint), bytes(audio))
+    names = ()
+    if agents_hint:
+        from app.runtime import load_agents
+
+        names = tuple(agent.name for agent in load_agents(db).values() if agent.custom)
+    text = await execute(partial(transcribe_audio, wake_hint=wake_hint, agent_names=names), bytes(audio))
     return {"text": text}
 
 
