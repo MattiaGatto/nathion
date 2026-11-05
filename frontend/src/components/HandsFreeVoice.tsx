@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccount } from "./AccessGate";
 import { api, workspaceRequest } from "../api/client";
 import { claimAudio, releaseAudio } from "../audioOwner";
@@ -311,28 +311,55 @@ export function HandsFreeVoice(props: Props) {
     }
   }
 
+  const phase = !active ? "idle"
+    : audio.current && !audio.current.paused ? "speaking"
+    : playing.current || (props.response && !props.response.done) || status === "Trascrizione locale…" ? "processing"
+    : "listening";
+  const signal = phase === "listening" ? Math.min(1, microphoneLevel / 0.14) : 0;
+  const phaseLabel = {
+    idle: "Standby",
+    listening: "In ascolto",
+    processing: "Elaborazione",
+    speaking: "Risposta vocale",
+  }[phase];
+
   return (
-    <section className={props.hero ? "space-y-4 pb-3 text-xs" : "mb-2 space-y-2 rounded-xl border border-nathion-border p-3 text-xs"} aria-label="Conversazione vocale">
-      <div className={props.hero ? "flex flex-col items-center gap-3" : "flex flex-wrap items-center gap-3"}>
+    <section className={`voice-console ${props.hero ? "voice-console--hero" : "voice-console--compact"}`}
+      data-phase={phase} style={{ "--voice-signal": signal } as CSSProperties} aria-label="Conversazione vocale">
+      <div className="voice-console__display">
         <button
-          className={props.hero ? "voice-orb" : active
-            ? "rounded-lg border border-nathion-border px-4 py-3 text-sm"
-            : "rounded-lg bg-nathion-accent px-4 py-3 text-sm font-medium text-nathion-bg disabled:opacity-40"}
+          className="voice-orb"
           aria-label={active ? "Ferma il microfono" : "Attiva ascolto vocale"}
           aria-pressed={active}
           disabled={!props.connected && !active}
           onClick={toggleSession}
         >
-          {props.hero
-            ? <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-                {active ? <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" /> : <>
-                  <rect x="9" y="3" width="6" height="12" rx="3" />
-                  <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-3 0h6" />
-                </>}
-              </svg>
-            : active ? "Ferma microfono" : "Attiva ascolto"}
+          <span className="voice-orb__halo" aria-hidden="true" />
+          <svg className="voice-orb__reticle" viewBox="0 0 160 160" fill="none" aria-hidden="true">
+            <circle cx="80" cy="80" r="75" stroke="currentColor" strokeOpacity=".16" />
+            <circle cx="80" cy="80" r="67" stroke="currentColor" strokeDasharray="1 5" strokeOpacity=".55" strokeWidth="4" />
+            <circle className="voice-orb__sweep" cx="80" cy="80" r="59" stroke="currentColor" strokeDasharray="48 90 12 36" strokeWidth="2" />
+            <circle cx="80" cy="80" r="48" stroke="currentColor" strokeOpacity=".24" />
+            <path d="M80 0v10m0 140v10M0 80h10m140 0h10" stroke="currentColor" />
+          </svg>
+          <span className="voice-orb__core">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+              {active ? <rect x="8" y="8" width="8" height="8" rx="1.5" fill="currentColor" /> : <>
+                <rect x="9" y="3" width="6" height="12" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-3 0h6" />
+              </>}
+            </svg>
+          </span>
         </button>
-        <span role="status">{status || (props.hero ? "Attiva ascolto" : "")}</span>
+        <div className="voice-console__readout">
+          <div className="voice-console__wave" aria-hidden="true">
+            {[0.28, 0.46, 0.65, 0.87, 1, 0.7, 0.5, 0.74, 0.41, 0.29, 0.55].map((height, index) => (
+              <span key={index} style={{ "--bar-height": height, "--bar-delay": `${index * -55}ms` } as CSSProperties} />
+            ))}
+          </div>
+          <p className="voice-console__phase">{phaseLabel}</p>
+          <p className="voice-console__status" role="status">{status || "Attiva ascolto"}</p>
+        </div>
       </div>
       <details className="space-y-2">
         <summary className="cursor-pointer text-nathion-muted">Opzioni vocali</summary>
@@ -356,10 +383,6 @@ export function HandsFreeVoice(props: Props) {
           <input type="range" min={0.008} max={0.08} step={0.002} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
         </label>
       </details>
-      {active && <label className="flex items-center gap-2 text-nathion-muted">
-        Segnale microfono
-        <meter min={0} max={Math.max(0.08, microphoneLevel)} low={threshold} value={microphoneLevel} />
-      </label>}
       {transcript && <p aria-live="polite" aria-label="Ultima frase riconosciuta">Tu: {transcript}</p>}
       {pcAction && <div className="space-y-2 rounded-lg border border-nathion-border p-3">
         <p>{pcAction.label}</p>
