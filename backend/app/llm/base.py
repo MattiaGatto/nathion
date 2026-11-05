@@ -57,3 +57,7 @@ class LLMProviderError(RuntimeError):
     """Sollevata quando il provider non e' raggiungibile o risponde con
     un errore. L'API la traduce in un messaggio chiaro per l'utente
     invece di un 500 generico."""
+
+
+class OutputLimitError(LLMProviderError):
+    """The provider stopped before completing the response."""

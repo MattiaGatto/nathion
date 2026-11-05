@@ -79,7 +79,8 @@ async def test_output_limit_is_not_reported_as_complete(monkeypatch):
     real_client = httpx.AsyncClient
     transport = httpx.MockTransport(lambda _: httpx.Response(200, text='{"message":{"content":"partial"},"done":true,"done_reason":"length"}\n'))
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_client(transport=transport, **kwargs))
-    with pytest.raises(LLMProviderError, match="incompleta"):
+    from app.llm.base import OutputLimitError
+    with pytest.raises(OutputLimitError, match="limite di risposta"):
         await OllamaProvider("http://local").chat([ChatMessage(role="user", content="test")], "test")
 
 

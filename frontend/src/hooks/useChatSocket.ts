@@ -6,6 +6,7 @@ export type ConnectionStatus = "idle" | "connecting" | "open" | "closed" | "erro
 interface StreamingMessage {
   content: string;
   done: boolean;
+  incomplete?: boolean;
 }
 
 /**
@@ -58,7 +59,9 @@ export function useChatSocket(conversationId: string | null, model: string | nul
       } else if (data.type === "error") {
         inFlightRef.current = false;
         setError(data.detail);
-        setStreaming(null);
+        setStreaming((prev) => data.code === "output_limit" && prev?.content
+          ? { ...prev, done: true, incomplete: true }
+          : null);
       } else if (data.type === "cancelled") {
         inFlightRef.current = false;
         setStreaming(null);

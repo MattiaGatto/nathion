@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Conversation, Message, MessageRole
 from app.db.session import get_db
-from app.llm.base import ChatMessage, LLMProviderError
+from app.llm.base import ChatMessage, LLMProviderError, OutputLimitError
 from app.llm.gateway import LLMGateway, get_gateway
 from app.core.preferences import default_provider
 from app.schemas.chat import (
@@ -161,6 +161,8 @@ async def chat_websocket(
             db.add(message)
             db.commit()
             await websocket.send_json({"type": "done", "message_id": message.id})
+        except OutputLimitError as exc:
+            await websocket.send_json({"type": "error", "code": "output_limit", "detail": str(exc)})
         except HTTPException as exc:
             await websocket.send_json({"type": "error", "detail": exc.detail})
         except (LLMProviderError, ValueError) as exc:

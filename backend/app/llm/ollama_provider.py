@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from app.llm.base import ChatMessage, LLMProvider, LLMProviderError, ModelInfo
+from app.llm.base import ChatMessage, LLMProvider, LLMProviderError, ModelInfo, OutputLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class OllamaProvider(LLMProvider):
                             yield content
                         if data.get("done"):
                             if data.get("done_reason") == "length":
-                                raise LLMProviderError("Risposta incompleta: raggiunto il limite di generazione. Riduci la richiesta o aumenta NATHION_OLLAMA_MAX_OUTPUT_TOKENS.")
+                                raise OutputLimitError("Il modello ha raggiunto il limite di risposta. Chiedi una parte più breve o specifica della richiesta.")
                             break
         except httpx.HTTPError as exc:
             logger.warning("Errore chiamando Ollama su %s: %s", url, exc)

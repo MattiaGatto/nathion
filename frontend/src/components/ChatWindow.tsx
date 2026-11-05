@@ -102,12 +102,13 @@ export function ChatWindow({
           <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
             {conversation?.messages.map((m) => <MessageBubble key={m.id} message={m} />)}
 
-            {streaming && !streaming.done && (
+            {streaming && (!streaming.done || streaming.incomplete) && (
               <div className="flex items-end gap-2.5">
                 <div className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-nathion-panel ring-1 ring-nathion-border">
                   <span className="h-2 w-2 rounded-full bg-nathion-accent" />
                 </div>
                 <div className="rounded-2xl rounded-bl-sm border border-nathion-border bg-nathion-panel px-4 py-2.5 text-[0.9rem] leading-relaxed text-nathion-text">
+                  {streaming.incomplete && <p className="mb-2 text-xs text-nathion-muted">Risposta parziale · non salvata</p>}
                   {awaitingFirstChunk ? (
                     <TypingIndicator />
                   ) : (
@@ -129,7 +130,7 @@ export function ChatWindow({
       <div className="border-t border-nathion-border px-6 py-4">
         <div className="mx-auto max-w-3xl">
           {streaming && !streaming.done && <button className="mb-3 rounded-lg border border-nathion-border px-3 py-2 text-xs" onClick={cancel}>Interrompi risposta</button>}
-          <HandsFreeVoice connected={status === "open"} response={streaming} onSend={handleSend} onInterrupt={cancel} />
+          <HandsFreeVoice connected={status === "open"} response={streaming?.incomplete ? null : streaming} onSend={handleSend} onInterrupt={cancel} />
           <VoiceControls key={conversationId} disabled={status !== "open" || Boolean(streaming && !streaming.done)}
             onTranscript={(text) => setVoiceDraft({ text })}
             reply={conversation?.messages.filter((m) => m.role === "assistant").at(-1)?.content ?? ""} />
