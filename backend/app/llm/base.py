@@ -43,6 +43,10 @@ class LLMProvider(ABC):
     async def chat(self, messages: list[ChatMessage], model: str) -> str:
         """Risposta completa (non in streaming)."""
 
+    async def chat_structured(self, messages: list[ChatMessage], model: str, schema: dict) -> str:
+        """Fallback for providers without constrained decoding; callers still validate."""
+        return await self.chat(messages, model)
+
     @abstractmethod
     async def chat_stream(self, messages: list[ChatMessage], model: str) -> AsyncIterator[str]:
         """Risposta in streaming, un chunk di testo alla volta. Usata dal

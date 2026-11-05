@@ -1,35 +1,50 @@
-# Stato verificabile del prodotto
+# Stato verificabile di NATHION
 
-Il progetto non è ancora completo rispetto alla costituzione. Questo file
-distingue capacità effettive da lavoro ancora richiesto.
+La versione locale include le funzioni della prima roadmap utilizzabile.
+Questo documento separa implementazione, prove ripetibili e verifiche che
+richiedono dispositivi o servizi esterni.
 
-| Area | Implementazione attuale | Lavoro ancora richiesto |
+| Area | Implementato | Limite o verifica esterna |
 | --- | --- | --- |
-| Foundation | Chat, Ollama, SQLite, Docker, adattatore compatibile opt-in | Collaudo reale LM Studio/vLLM o provider remoto configurato |
-| Voce | Whisper/Piper locali, filtro Silero, WS, parziali e coda per frasi, cancellazione chat e audio | Fine turno e interruzione automatiche, prova microfono/browser |
-| Orchestratore | 7 agenti configurabili, routing per regole, DAG, parallelismo limitato, timeout, aggregazione | Piani LLM validati, job riprendibili |
-| Skills | Discovery file, metadata validati, selezione e caricamento per agente | Composizione e gestione UI delle skills |
-| Memoria | SQLite, categorie, provenienza, certezza, deduplica, BM25 + vettori locali, modifica e ricerca UI | Estrazione e sintesi automatica selettiva, valutazione su dati reali |
-| Multi-agent voice | Profili Piper distinti, coda unica, ascolto dei contributi finali degli agenti | Prova di ascolto reale, conversazione full duplex |
-| Mobile | UI responsive, PWA, proxy, account e inviti, permessi e quote | Prova telefono, HTTPS/Tailscale configurati nell'ambiente reale |
-| Tool engine | Registry, calcolatrice/orologio con permessi, approvazioni, MCP HTTP con allowlist e consenso | Tool calling LLM dinamico e connessioni reali scelte dall'utente |
-| Advanced | Timeline, errori, timeout, automazioni locali persistenti | Monitoraggio esteso; knowledge graph solo se necessario |
+| Foundation | Chat persistente, streaming, Ollama, SQLite, Docker, adattatore compatibile | LM Studio/vLLM non installati; adattatore provabile con Ollama /v1 |
+| Voce | Whisper/Piper, Silero sul server, parziali manuali, turni automatici, frasi progressive, interruzione opzionale parlando | Microfono, eco, Bluetooth e sospensione Android da provare sul dispositivo |
+| Orchestratore | 7 agenti configurabili, routing diretto, piani LLM da approvare, DAG validato, parallelismo, timeout, aggregazione | Nessuna garanzia automatica di correttezza del testo generato; job interrotti dichiarati, senza ripresa automatica |
+| Skills | File versionati Markdown/YAML, discovery, validazione e selezione contestuale | Gestione dei file riservata all'operatore; nessun marketplace o upload non attendibile |
+| Memoria | Categorie, fonte, fatti/inferenze, suggerimenti selettivi con salvataggio approvato, deduplica, BM25 e vettori locali, modifica e cancellazione | Qualità delle proposte da verificare; nessun salvataggio indiscriminato delle conversazioni |
+| Multi-agent voice | Profili Piper distinti, coda centrale, ascolto sequenziale dei contributi degli agenti | Ascolto sul telefono da accettare con prova reale |
+| Mobile | PWA responsive, manifest, service worker, proxy, account, inviti, ruoli e quote | Tailscale connesso ma Serve continua a risultare non abilitato; HTTPS remoto e installazione Android non accettati come superati |
+| Tool engine | Registry, calcolatrice/orologio, strumenti nei piani validati, MCP HTTP con allowlist, consenso e traccia | MCP richiede server scelti dall'operatore; nessuna shell o navigazione web arbitraria |
+| Operazioni | Programmazioni persistenti, stato aggregato, cancellazione, export e backup SQLite verificato | PC acceso necessario; nessuna sincronizzazione fra installazioni indipendenti |
 
-L'assenza di un tool viene dichiarata nelle istruzioni degli agenti; un Research
-Agent non viene presentato come una ricerca web eseguita. La presenza di un
-manifest non equivale a installazione mobile verificata. Le prove audio
-sintetiche non equivalgono a una conversazione registrata dal microfono.
+Verifiche automatiche del 5 novembre 2026: 90 test backend isolati, 7 test
+frontend su turni, audio e suddivisione delle frasi; compilazione Vite 8 e
+controllo npm senza vulnerabilità segnalate. La schermata login è stata
+controllata nel browser a dimensione desktop e a 390 px, senza overflow.
 
-Il 5 novembre sono state verificate le API protette dietro Nginx, login/logout,
-asset PWA, skills, memoria esplicita e un DAG reale architect → coding con
-aggregazione Ollama. Il primo tentativo era scaduto; il successivo con budget
-esplicito ha completato l'esecuzione. Il report iniziale mostrava una sintesi
-troncata al limite token: è stata quindi aggiunta la gestione esplicita di
-done_reason=length e un limite di verbosità nelle istruzioni degli agenti.
-Il completamento del trasporto non dimostra qualità generale del modello.
+`./scripts/verify.ps1 -LocalAI` esegue anche prove reali con Ollama,
+Whisper/Piper, Nginx, workflow, ricerca semantica, cancellazione, MCP locale,
+worker, proposte e account. I report sono in `backend/data/voice-check/` e
+rimangono esclusi da Git. Le prove sintetiche non sostituiscono il microfono.
+La verifica delle sessioni server su loopback non certifica un cookie browser
+su HTTPS: il report degli account distingue esplicitamente le due cose.
 
-L'accesso multiutente include migrazione SQLite con backup preventivo,
-propriet� dei dati, test di isolamento HTTP/WebSocket, inviti monouso,
-approvazione, revoca, quote e operazioni amministrative. I test usano account
-e database isolati. Il 5 novembre il comando Tailscale continua a dichiarare
-Serve non abilitato; l'accesso HTTPS remoto non � quindi accettato come superato.
+Sul PC sono passati il ciclo Whisper → Ollama → Piper su audio sintetico,
+il workflow reale con due agenti, la ricerca semantica, le due voci, la
+cancellazione, il test MCP su un server locale temporaneo e il worker delle
+programmazioni. Sono passati anche piano strutturato e suggerimenti con
+llama3.2:3b, il provider compatibile su Ollama /v1 e il flusso reale ospite:
+approvazione, modello consentito, dati isolati e sessione revocata. Il backup
+manuale ha superato `PRAGMA integrity_check` ed è stato copiato sul PC.
+Il tentativo finale di attivare Serve ha confermato che non è abilitato nella
+rete Tailscale; non è stato configurato un accesso pubblico.
+
+
+La migrazione multiutente crea un backup prima di modificare lo schema;
+i dati precedenti restano di Mattia. Gli invitati hanno dati separati,
+modelli e quota approvati. Un ospite di prova viene sospeso e ripulito dopo
+il collaudo, mantenendo soltanto un account disabilitato di audit.
+
+Un knowledge graph non è necessario per il volume e i casi d'uso attuali:
+SQLite, ricerca ibrida e relazioni dei workflow coprono la prima versione.
+Neo4j resta un'estensione motivabile da esigenze future, come previsto nella
+costituzione. Non vengono dichiarate ricerche web o strumenti mai eseguiti.

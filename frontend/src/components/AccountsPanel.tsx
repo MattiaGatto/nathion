@@ -29,7 +29,7 @@ function UserEditor({ user, models, onSaved }: { user: User; models: string[]; o
     } catch (e) { setError(e instanceof Error ? e.message : "Esportazione fallita"); }
   }
   async function manage(action: "password" | "erase-data") {
-    if (!window.confirm(action === "password" ? `Creare una password temporanea per ${user.username}?` : `Eliminare definitivamente chat, memoria e attivit� di ${user.username}?`)) return;
+    if (!window.confirm(action === "password" ? `Creare una password temporanea per ${user.username}?` : `Eliminare definitivamente chat, memoria e attività di ${user.username}?`)) return;
     setBusy(true); setError("");
     try {
       const result = await workspaceRequest<{ temporary_password?: string }>(`auth/admin/users/${user.id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmation: user.username }) });
@@ -44,6 +44,8 @@ function UserEditor({ user, models, onSaved }: { user: User; models: string[]; o
 export function AccountsPanel() {
   const account = useAccount();
   const admin = account?.role === "admin";
+  const [diagnostic, setDiagnostic] = useState<Record<string, number | boolean | string>>({});
+  const [usage, setUsage] = useState<{ used: number; limit: number | null }>({ used: 0, limit: null });
   const [users, setUsers] = useState<User[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [models, setModels] = useState<string[]>([]);
@@ -54,7 +56,9 @@ export function AccountsPanel() {
   async function reload() {
     const [people, invitations] = await Promise.all([workspaceRequest<User[]>("auth/admin/users"), workspaceRequest<Invite[]>("auth/admin/invitations")]);
     setUsers(people); setInvites(invitations);
+    setDiagnostic(await workspaceRequest<Record<string, number | boolean | string>>("auth/admin/diagnostics"));
   }
+  useEffect(() => { workspaceRequest<{ used: number; limit: number | null }>("auth/usage").then(setUsage).catch(() => {}); }, []);
   useEffect(() => {
     if (!admin) return;
     reload().catch((e) => setError(e.message));
@@ -72,5 +76,5 @@ export function AccountsPanel() {
     try { await workspaceRequest(`auth/admin/invitations/${id}`, { method: "DELETE" }); await reload(); }
     catch (e) { setError(e instanceof Error ? e.message : "Revoca fallita"); }
   }
-  return <section className="space-y-4 rounded-xl border border-nathion-border p-4"><h2 className="text-lg">Account · {account?.display_name}</h2><PasswordForm onChanged={() => window.location.reload()} />{admin && <><h2 className="pt-4 text-lg">Utenti e accesso al server</h2><p className="text-sm text-nathion-muted">Ogni persona ha chat e memoria separate. Un invito crea un account in attesa: approva l'account, abilita il server e scegli i modelli. La quota conta ogni chiamata agli agenti, ogni operazione vocale e ogni embedding. L'accesso Tailscale va autorizzato separatamente.</p>{users.map((user) => <UserEditor key={JSON.stringify(user)} user={user} models={models} onSaved={reload} />)}<label className="block">Invito personale valido 7 giorni<input className={field + " ml-2"} aria-label="Etichetta invito" placeholder="Nome della persona" value={label} maxLength={100} onChange={(e) => setLabel(e.target.value)} /></label><button className={button} disabled={busy || !label.trim()} onClick={invite}>Crea invito</button>{link && <label className="block text-sm">Copia e condividi questo link in privato (mostrato una sola volta)<input className={field + " mt-2 w-full"} readOnly value={link} onFocus={(e) => e.target.select()} /><span className="text-xs text-nathion-muted">Per un telefono usa l'indirizzo HTTPS privato, non localhost.</span></label>}<ul className="space-y-2">{invites.map((item) => <li key={item.id} className="text-sm">{item.label} · {item.used ? "Utilizzato" : item.revoked ? "Revocato" : `Scade ${new Date(item.expires_at).toLocaleDateString("it-IT")}`} {!item.revoked && !item.used && <button className={button + " ml-2"} onClick={() => revoke(item.id)}>Revoca</button>}</li>)}</ul></>}{error && <p role="alert" className="text-red-300">{error}</p>}</section>;
+  return <section className="space-y-4 rounded-xl border border-nathion-border p-4"><h2 className="text-lg">Account · {account?.display_name}</h2>{usage.limit !== null && <p className="text-sm">Operazioni AI oggi: {usage.used} / {usage.limit} · azzeramento a mezzanotte UTC.</p>}<PasswordForm onChanged={() => window.location.reload()} />{admin && <><h2 className="pt-4 text-lg">Stato del server</h2><p className="text-sm">Utenti attivi: {diagnostic.active_users ?? "–"} · Attività in corso: {diagnostic.running ?? "–"} · Attività fallite: {diagnostic.failed ?? "–"} · Operazioni in attesa: {diagnostic.pending_actions ?? "–"} · Programmazioni: {diagnostic.schedules ?? "–"}</p><button className={button} onClick={() => reload().catch((e) => setError(e.message))}>Aggiorna stato</button><h2 className="pt-4 text-lg">Utenti e accesso al server</h2><p className="text-sm text-nathion-muted">Ogni persona ha chat e memoria separate. Un invito crea un account in attesa: approva l'account, abilita il server e scegli i modelli. La quota conta ogni chiamata agli agenti, ogni operazione vocale e ogni embedding. L'accesso Tailscale va autorizzato separatamente.</p>{users.map((user) => <UserEditor key={JSON.stringify(user)} user={user} models={models} onSaved={reload} />)}<label className="block">Invito personale valido 7 giorni<input className={field + " ml-2"} aria-label="Etichetta invito" placeholder="Nome della persona" value={label} maxLength={100} onChange={(e) => setLabel(e.target.value)} /></label><button className={button} disabled={busy || !label.trim()} onClick={invite}>Crea invito</button>{link && <label className="block text-sm">Copia e condividi questo link in privato (mostrato una sola volta)<input className={field + " mt-2 w-full"} readOnly value={link} onFocus={(e) => e.target.select()} /><span className="text-xs text-nathion-muted">Per un telefono usa l'indirizzo HTTPS privato, non localhost.</span></label>}<ul className="space-y-2">{invites.map((item) => <li key={item.id} className="text-sm">{item.label} · {item.used ? "Utilizzato" : item.revoked ? "Revocato" : `Scade ${new Date(item.expires_at).toLocaleDateString("it-IT")}`} {!item.revoked && !item.used && <button className={button + " ml-2"} onClick={() => revoke(item.id)}>Revoca</button>}</li>)}</ul></>}{error && <p role="alert" className="text-red-300">{error}</p>}</section>;
 }

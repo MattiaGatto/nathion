@@ -1,3 +1,5 @@
+import { HandsFreeVoice } from "./HandsFreeVoice";
+import { MemorySuggestions } from "./MemorySuggestions";
 import { useEffect, useRef, useState } from "react";
 import { api, type ConversationDetail, type MessageOut } from "../api/client";
 import { useChatSocket } from "../hooks/useChatSocket";
@@ -43,7 +45,7 @@ export function ChatWindow({
   }, [conversation, streaming]);
 
   function handleSend(text: string) {
-    if (!conversation || status !== "open" || (streaming && !streaming.done)) return;
+    if (!conversation || status !== "open" || (streaming && !streaming.done)) return false;
 
     const optimisticUser: MessageOut = {
       id: `local-${crypto.randomUUID()}`,
@@ -59,6 +61,7 @@ export function ChatWindow({
         .finally(onConversationUpdated);
     });
     if (accepted) setConversation((prev) => prev && { ...prev, messages: [...prev.messages, optimisticUser] });
+    return accepted;
   }
 
   if (loadError) {
@@ -126,9 +129,11 @@ export function ChatWindow({
       <div className="border-t border-nathion-border px-6 py-4">
         <div className="mx-auto max-w-3xl">
           {streaming && !streaming.done && <button className="mb-3 rounded-lg border border-nathion-border px-3 py-2 text-xs" onClick={cancel}>Interrompi risposta</button>}
+          <HandsFreeVoice connected={status === "open"} response={streaming} onSend={handleSend} onInterrupt={cancel} />
           <VoiceControls key={conversationId} disabled={status !== "open" || Boolean(streaming && !streaming.done)}
             onTranscript={(text) => setVoiceDraft({ text })}
             reply={conversation?.messages.filter((m) => m.role === "assistant").at(-1)?.content ?? ""} />
+          <MemorySuggestions key={`memory-${conversationId}`} conversationId={conversationId} model={model} />
           <Composer
             draft={voiceDraft}
             disabled={status !== "open" || Boolean(streaming && !streaming.done)}

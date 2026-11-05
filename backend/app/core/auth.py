@@ -122,7 +122,7 @@ class AuthenticationMiddleware:
             headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
             mutation = scope["type"] == "websocket" or scope.get("method") not in {"GET", "HEAD", "OPTIONS"}
             path = scope["path"]
-            public = path in {"/api/auth/status", "/api/auth/login", "/api/auth/register"} or scope.get("method") == "OPTIONS"
+            public = path in {"/api/auth/status", "/api/auth/login", "/api/auth/register", "/api/auth/logout"} or scope.get("method") == "OPTIONS"
             with database(factory) as db:
                 current = resolve(headers, db)
             identity.set(current)
@@ -137,10 +137,14 @@ class AuthenticationMiddleware:
                 elif not current.is_admin and (path.startswith("/api/auth/admin") or path.startswith("/api/tools") or path.startswith("/api/schedules")):
                     code, detail = 403, "Funzione riservata all'amministratore"
             if not code:
-                return await self.app(scope, receive, send)
+                async def private_send(message):
+                    if message["type"] == "http.response.start":
+                        message["headers"] = [(key, value) for key, value in message.get("headers", []) if key.lower() != b"cache-control"] + [(b"cache-control", b"no-store")]
+                    await send(message)
+                return await self.app(scope, receive, private_send)
             if scope["type"] == "websocket":
                 return await send({"type": "websocket.close", "code": 4401 if code == 401 else 4403})
-            await Response(json.dumps({"detail": detail}), status_code=code, media_type="application/json")(scope, receive, send)
+            await Response(json.dumps({"detail": detail}), status_code=code, media_type="application/json", headers={"Cache-Control": "no-store"})(scope, receive, send)
         finally:
             identity.reset(marker); database_provider.reset(provider_marker)
 
@@ -158,7 +162,7 @@ def set_session(user, request, response, db, operator=False):
     response.set_cookie(COOKIE, token, httponly=True, secure=get_settings().auth_cookie_secure or request.url.scheme == "https",
                         samesite="strict", path="/api", max_age=8 * 3600)
 
-def throttle(request):
+def throttle(request, username=""):
     now = time.monotonic()
     if len(_attempts) > 2048:
         for key in list(_attempts):
@@ -166,7 +170,14 @@ def throttle(request):
                 del _attempts[key]
         if len(_attempts) > 2048:
             raise HTTPException(429, "Riprova tra un minuto")
-    attempts = _attempts[request.client.host if request.client else "local"]
+    source = request.client.host if request.client else "local"
+    overall = _attempts["overall:" + source]
+    while overall and overall[0] < now - 60:
+        overall.popleft()
+    if len(overall) >= 60:
+        raise HTTPException(429, "Troppi tentativi sul server. Attendi un minuto.")
+    overall.append(now)
+    attempts = _attempts[source + ":" + digest(username.lower())]
     while attempts and attempts[0] < now - 60:
         attempts.popleft()
     if len(attempts) >= 5:
@@ -194,7 +205,7 @@ def status():
 
 @router.post("/login")
 def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
-    throttle(request)
+    throttle(request, body.username)
     owner = ensure_owner(db)
     operator = bool(body.token) and secrets.compare_digest(body.token, access_token())
     user = owner if operator else db.query(User).filter_by(username=body.username.lower()).first()
@@ -212,7 +223,7 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
 
 @router.post("/password")
 def password(body: PasswordIn, request: Request, response: Response, db: Session = Depends(get_db)):
-    throttle(request)
+    throttle(request, identity.get().username)
     user = db.get(User, identity.get().id)
     if not user or not verify_password(user.password_hash, body.current_password):
         raise HTTPException(401, "Password attuale non valida")
@@ -227,7 +238,7 @@ def password(body: PasswordIn, request: Request, response: Response, db: Session
 
 @router.post("/register", status_code=201)
 def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
-    throttle(request)
+    throttle(request, body.username)
     invitation = db.query(Invitation).filter_by(token_hash=digest(body.invitation)).first()
     now = datetime.now(timezone.utc)
     if not invitation or invitation.revoked or invitation.used_by or invitation.expires_at.replace(tzinfo=timezone.utc) <= now:
@@ -353,3 +364,22 @@ def erase_user_data(user_id: str, body: ConfirmIn, db: Session = Depends(get_db)
         return {"erased": True}
     finally:
         identity.reset(marker)
+
+
+@router.get("/admin/diagnostics")
+def diagnostics(db: Session = Depends(get_db)):
+    from app.db.models import Run, Schedule, ToolAction, Memory
+    from app.core.config import get_settings
+    settings = get_settings()
+    previous = db.info.get("system")
+    db.info["system"] = True
+    try:
+        return {"users": db.query(User).count(), "active_users": db.query(User).filter_by(status="active").count(),
+                "runs": db.query(Run).count(), "running": db.query(Run).filter_by(status="running").count(),
+                "failed": db.query(Run).filter_by(status="failed").count(),
+                "pending_actions": db.query(ToolAction).filter_by(status="pending").count(),
+                "schedules": db.query(Schedule).filter_by(enabled=True).count(), "memories": db.query(Memory).count(),
+                "voice_enabled": settings.voice_enabled, "mcp_servers": len(settings.mcp_servers),
+                "compatible_configured": bool(settings.compatible_base_url), "server_time": datetime.now(timezone.utc)}
+    finally:
+        db.info["system"] = previous

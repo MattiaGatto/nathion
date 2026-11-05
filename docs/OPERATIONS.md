@@ -13,15 +13,15 @@ con `NATHION_ADMIN_USERNAME` e `NATHION_ADMIN_DISPLAY_NAME`.
 Le password sono salvate con Argon2id; le sessioni browser durano 8 ore e usano
 cookie HttpOnly, SameSite Strict e Secure su HTTPS. Il database conserva solo
 l'hash dei token. Logout revoca la sessione; cambio password e modifica dei
-permessi revocano tutte le sessioni dell'account. Le connessioni chat gi� aperte
+permessi revocano tutte le sessioni dell'account. Le connessioni chat già aperte
 ricontrollano l'autorizzazione prima di una nuova richiesta e durante lo stream.
-Un calcolo nativo gi� iniziato pu� terminare: la revoca non annulla effetti gi�
+Un calcolo nativo già iniziato può terminare: la revoca non annulla effetti già
 avvenuti. Le chiamate vocali ricontrollano autorizzazioni a ogni segmento.
 
 La chiave operatore `backend/data/access-token.txt` resta per gli script locali
 e per il recupero amministratore. Consente pieno accesso: non condividerla.
 Gli invitati usano esclusivamente i propri account. Vedi [Account](ACCOUNTS.md).
-L'autenticazione � attiva per default; i test la disattivano solo in fixture
+L'autenticazione è attiva per default; i test la disattivano solo in fixture
 isolate. Il backend verifica l'origine di scritture e WebSocket.
 
 Il Centro di controllo contiene agenti, workflow e memoria. La chat ordinaria
@@ -55,8 +55,10 @@ permesso microfono e audio vanno provati sul dispositivo reale.
 
 ## Dati e ripristino
 
-SQLite e chiave sono nel volume backend_data. Arresta i servizi prima di
-copiare il database per un backup coerente. Conserva il volume quando
+SQLite, account e chiave sono nel volume backend_data. `./scripts/backup.ps1`
+crea una copia con SQLite backup e integrity_check anche durante l’uso, poi
+la copia in backend/data/backups. Contiene credenziali e dati: conservala in
+privato. Prima di un ripristino arresta i servizi e conserva una copia attuale. Conserva il volume quando
 aggiorni le immagini: non usare down -v se vuoi mantenere i dati.
 I modelli sono nella directory models sull'host, montata in sola lettura.
 La cancellazione di una conversazione elimina anche i messaggi; quella di
@@ -83,7 +85,8 @@ NATHION_COMPATIBLE_BASE_URL, per esempio http://host.docker.internal:1234/v1
 per un LM Studio locale nell'host. Se serve, aggiungi NATHION_COMPATIBLE_API_KEY.
 Ricrea il backend; il provider appare nelle impostazioni. Non sono stati
 configurati servizi cloud. Il contratto è testato, ma LM Studio/vLLM non sono
-stati avviati per il collaudo reale.
+stati avviati per il collaudo reale. `check_compatible.py` verifica invece
+lo stesso adattatore sul vero endpoint Ollama /v1 locale.
 
 NATHION_MEMORY_EMBEDDING_MODEL=mxbai-embed-large:latest è attivo nel .env di
 questo PC e usa il modello Ollama già installato. Lascia vuoto per sola ricerca
@@ -96,3 +99,27 @@ indicando il percorso usato nell'header X-Memory-Retrieval e nelle tracce.
 di una nota temporanea e la elimina alla fine. I modelli embedding non sono
 scaricati dalle richieste dell'app. Le memorie passate agli agenti rimangono
 verificabili con fonte e distinzione tra fatti e inferenze.
+
+## Proposte, limiti e manutenzione
+
+**Proponi piano con il modello** genera JSON con agenti, dipendenze e soli
+strumenti concessi. Il server valida il grafo; puoi leggere e modificare il
+piano prima di **Approva piano e avvia**. Una risposta non valida del modello
+viene rifiutata senza esecuzione; resta disponibile l'avvio diretto per regole.
+Non sono consentiti shell o chiamate MCP inventate nel piano.
+
+**Suggerisci cosa ricordare** analizza soltanto messaggi dell'utente nella
+conversazione corrente. Le proposte restano nel browser finché premi Salva;
+fonte e stato da verificare sono espliciti. Puoi modificarle, scartarle o
+confermarle come fatti nel Centro di controllo dopo la tua verifica.
+
+Il server limita a due le inferenze chat/agenti/embedding e a una l'inferenza
+vocale. Non crea code illimitate. Le richieste occupate ricevono un errore
+esplicito; memoria e ricerca possono proseguire senza embedding. Il pannello
+amministratore riporta utenti, attività, errori, attese e programmazioni.
+
+Docker usa `backend/constraints.txt` esportato da `uv.lock`. Dopo un
+aggiornamento intenzionale delle dipendenze rigenera con
+`uv export --all-extras --no-hashes --no-emit-project --format requirements-txt --output-file constraints.txt`
+dal backend e riesegui le verifiche. Frontend e lockfile usano Vite 8 e Node 24;
+il controllo npm non segnalava vulnerabilità il 5 novembre 2026.

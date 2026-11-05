@@ -9,3 +9,7 @@ export function claimAudio(owner: symbol, stop: () => void) {
 export function releaseAudio(owner: symbol) {
   if (active?.owner === owner) active = null;
 }
+
+export function stopAllAudio() {
+  const current = active; active = null; current?.stop();
+}

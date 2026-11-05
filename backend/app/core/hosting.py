@@ -47,3 +47,20 @@ def authorize_compute(model=None, provider=None, charge=True):
         db.commit()
         if not updated:
             raise HTTPException(429, "Quota giornaliera esaurita. Ogni chiamata di un agente conta come richiesta.")
+
+
+# A single process-wide bound applies to chat, agents and embedding requests.
+from contextlib import contextmanager
+from threading import BoundedSemaphore
+_compute_slots = BoundedSemaphore(2)
+
+
+@contextmanager
+def compute_slot(model=None, provider=None):
+    if not _compute_slots.acquire(blocking=False):
+        raise HTTPException(429, "Motore AI occupato. Attendi la richiesta in corso e riprova.")
+    try:
+        authorize_compute(model, provider)
+        yield
+    finally:
+        _compute_slots.release()

@@ -40,7 +40,8 @@ permesso microfono. Premi **Registra voce**, parla, poi **Termina e trascrivi**.
 Rivedi il testo e invialo. **Ascolta ultima risposta** usa Piper locale;
 **Interrompi audio** ferma riproduzione o registrazione e impedisce la
 sintesi dei segmenti successivi. Una nuova registrazione interrompe l'ascolto.
-La generazione LLM e l'inferenza server già avviate non sono cancellate.
+Il pulsante Interrompi risposta cancella lo stream LLM. Un'inferenza vocale
+nativa già avviata può terminare nel server prima di liberare il motore.
 Risposte oltre 4000 caratteri restano testuali in questo incremento.
 
 L'audio viaggia via WebSocket. Durante la registrazione il server tenta una
@@ -49,8 +50,30 @@ dispositivi o formati che non permettono decodifica parziale, il testo arriva
 alla fine. La risposta vocale è suddivisa in frasi WAV, con una sola frase
 in coda: testo del segmento e audio vengono trasmessi insieme.
 
-Silero VAD filtra il silenzio nella trascrizione. Non c'è ancora rilevamento
-continuo della fine turno: premi **Termina e trascrivi** quando hai finito.
+Silero VAD filtra il silenzio nella trascrizione finale.
+
+## Conversazione vocale automatica
+
+**Avvia conversazione vocale** mantiene il microfono attivo nella pagina.
+Un AudioWorklet locale rileva energia sostenuta (220 ms) e fine turno dopo
+900 ms di silenzio. Conserva fino a 500 ms iniziali per non tagliare l'attacco;
+ogni turno è limitato a circa 54 secondi. Il WAV mono 16 kHz viene trascritto
+sul PC e inviato alla chat automaticamente. Il testo in arrivo alimenta una
+coda di frasi Piper; solo un proprietario audio può riprodurre o registrare.
+
+**Interrompi parlando** annulla voce e generazione quando viene rilevato un
+nuovo turno. È opzionale: usa cuffie e regola la soglia in ambienti rumorosi,
+perché cancellazione eco e rilevamento energetico dipendono dal dispositivo.
+L'AudioWorklet decide i turni; Silero sul server filtra il contenuto finale.
+Non vengono dichiarati risultati equivalenti a un VAD neurale nel browser.
+
+La sessione si chiude cambiando conversazione, aprendo i pannelli,
+nascondendo la pagina, perdendo la connessione o dopo due minuti senza voce.
+Puoi terminarla sempre dal pulsante. Le acquisizioni non vengono salvate;
+restano i messaggi inviati esplicitamente o dalla sessione attiva. Un calcolo
+nativo già avviato può finire dopo lo stop, ma non viene accodato altro audio.
+I test su segnali e formati sintetici non sostituiscono una prova del microfono
+su Android, compresi eco, rumore, Bluetooth, sospensione e riconnessione.
 
 ## Verifiche ripetibili
 

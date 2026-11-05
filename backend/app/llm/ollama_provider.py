@@ -54,7 +54,10 @@ class OllamaProvider(LLMProvider):
         chunks = [chunk async for chunk in self.chat_stream(messages, model)]
         return "".join(chunks)
 
-    async def chat_stream(self, messages: list[ChatMessage], model: str) -> AsyncIterator[str]:
+    async def chat_structured(self, messages: list[ChatMessage], model: str, schema: dict) -> str:
+        return "".join([chunk async for chunk in self.chat_stream(messages, model, response_format=schema)])
+
+    async def chat_stream(self, messages: list[ChatMessage], model: str, response_format: dict | None = None) -> AsyncIterator[str]:
         url = f"{self._base_url}/api/chat"
         body = {
             "model": model,
@@ -62,6 +65,10 @@ class OllamaProvider(LLMProvider):
             "stream": True,
             "options": self._options,
         }
+
+        if response_format is not None:
+            body["format"] = response_format
+            body["options"] = {**self._options, "temperature": 0}
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:

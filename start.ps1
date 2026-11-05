@@ -19,6 +19,6 @@ try {
         Write-Output ('Password iniziale amministratore nel file: ' + (Join-Path $dataPath 'admin-initial-password.txt'))
     }
     Write-Output 'NATHION avviato: http://localhost:4173'
-    Write-Output ('La chiave di accesso è nel file: ' + (Join-Path $dataPath 'access-token.txt'))
+    Write-Output ('Chiave operatore riservata, da non condividere: ' + (Join-Path $dataPath 'access-token.txt'))
     Write-Output 'Nessuna credenziale è stata stampata o aggiunta a Git.'
 } finally { Pop-Location }

@@ -216,3 +216,110 @@ def test_admin_exports_erases_only_disabled_guest_data_and_resets_password(accou
     assert client.post("/api/auth/admin/users/alice/erase-data", headers=admin, json={"confirmation": "alice"}).status_code == 200
     assert client.get("/api/auth/admin/users/alice/export", headers=admin).json()["memory"] == []
     assert [row["content"] for row in client.get("/api/memory", headers=headers("bob")).json()] == ["bob private"]
+
+
+@pytest.mark.parametrize("tasks", [
+    [{"id": "a", "agent_id": "missing", "instruction": "test"}],
+    [{"id": "a", "agent_id": "general", "instruction": "test", "depends_on": ["a"]}],
+    [{"id": "a", "agent_id": "coding", "instruction": "2+2", "tool": "calculator"}],
+    [{"id": "a", "agent_id": "general", "instruction": "test", "tool": "shell"}],
+    [],
+])
+def test_model_plans_reject_invalid_agents_dependencies_and_tools(client, monkeypatch, tasks):
+    from tests.conftest import StubProvider
+    async def answer(self, messages, model):
+        return json.dumps({"tasks": tasks})
+    monkeypatch.setattr(StubProvider, "chat", answer)
+    assert client.post("/api/plans", json={"prompt": "test", "model": "stub-model"}).status_code == 422
+    assert client.get("/api/runs").json() == []
+
+
+def test_model_plan_is_a_proposal_until_explicit_execution(client, monkeypatch):
+    from tests.conftest import StubProvider
+    async def answer(self, messages, model):
+        return json.dumps({"tasks": [{"id": "one", "agent_id": "general", "instruction": "2 + 3", "tool": "calculator"}]})
+    monkeypatch.setattr(StubProvider, "chat", answer)
+    proposal = client.post("/api/plans", json={"prompt": "Somma", "model": "stub-model"})
+    assert proposal.status_code == 200
+    assert client.get("/api/runs").json() == []
+    run = client.post("/api/runs", json={"prompt": "Somma", "model": "stub-model", "tasks": proposal.json()["tasks"]}).json()
+    assert run["status"] == "completed" and run["result"] == "5"
+
+
+def test_memory_suggestions_are_private_unsaved_and_marked_as_inference(accounts, monkeypatch):
+    from tests.conftest import StubProvider
+    client, db, headers, admin = accounts
+    async def answer(self, messages, model):
+        assert "user_utterances" in messages[-1].content
+        return json.dumps({"suggestions": [{"content": "Preferisco Python", "category": "profile"}]})
+    conv = client.post("/api/chat/conversations", headers=headers("alice"), json={}).json()
+    marker = identity.set(Principal(id="alice", role="member"))
+    try:
+        from app.db.models import Message, MessageRole
+        db.add(Message(conversation_id=conv["id"], role=MessageRole.user, content="Preferisco Python")); db.commit()
+    finally:
+        identity.reset(marker)
+    monkeypatch.setattr(StubProvider, "chat", answer)
+    path = f'/api/conversations/{conv["id"]}/memory-suggestions'
+    assert client.post(path, headers=headers("bob"), json={"model": "stub-model"}).status_code == 404
+    response = client.post(path, headers=headers("alice"), json={"model": "stub-model"})
+    assert response.status_code == 200
+    suggestion = response.json()["suggestions"][0]
+    assert suggestion["certainty"] == "inference" and suggestion["source"] == "conversation:" + conv["id"]
+    assert client.get("/api/memory", headers=headers("alice")).json() == []
+    assert client.post("/api/memory", headers=headers("alice"), json=suggestion).status_code == 200
+    assert client.get("/api/memory", headers=headers("bob")).json() == []
+
+
+def test_monitoring_is_aggregate_and_admin_only(accounts):
+    client, db, headers, admin = accounts
+    assert client.get("/api/auth/admin/diagnostics", headers=headers("alice")).status_code == 403
+    state = client.get("/api/auth/admin/diagnostics", headers=admin).json()
+    assert state["users"] == 3
+    assert "password" not in json.dumps(state) and "token" not in json.dumps(state)
+
+
+
+@pytest.mark.asyncio
+async def test_global_compute_bound_releases_slots_after_completion():
+    import asyncio
+    from fastapi import HTTPException
+    from app.llm.gateway import LLMGateway
+    from app.llm.base import ChatMessage
+    release = asyncio.Event()
+    entered = 0
+    class Provider:
+        async def chat(self, messages, model):
+            nonlocal entered
+            entered += 1
+            await release.wait()
+            return "ok"
+    gateway = LLMGateway.__new__(LLMGateway)
+    gateway._settings = type("Config", (), {"default_llm_provider": "ollama"})()
+    gateway._providers = {"ollama": Provider()}
+    tasks = [asyncio.create_task(gateway.chat([ChatMessage(role="user", content="test")], "model")) for _ in range(2)]
+    while entered < 2:
+        await asyncio.sleep(0)
+    try:
+        with pytest.raises(HTTPException) as error:
+            await gateway.chat([], "model")
+        assert error.value.status_code == 429
+    finally:
+        release.set(); await asyncio.gather(*tasks)
+    assert await gateway.chat([], "model") == "ok"
+
+
+def test_manual_sqlite_backup_is_consistent_and_separate(tmp_path, monkeypatch, capsys):
+    from scripts.backup_database import main
+    source = tmp_path / "source.sqlite3"
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE example (value TEXT)")
+        connection.execute("INSERT INTO example VALUES ('retained')")
+    monkeypatch.setattr(get_settings(), "database_url", "sqlite:///" + str(source))
+    main()
+    filename = capsys.readouterr().out.strip()
+    backup = tmp_path / "backups" / filename
+    assert backup.is_file() and backup != source
+    with sqlite3.connect(backup) as connection:
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("SELECT value FROM example").fetchone()[0] == "retained"

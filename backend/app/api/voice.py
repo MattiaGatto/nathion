@@ -115,7 +115,10 @@ async def execute(function, argument):
     job = asyncio.create_task(run_in_threadpool(run))
     job.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
     try:
-        return await asyncio.shield(job)
+        async with asyncio.timeout(90):
+            return await asyncio.shield(job)
+    except TimeoutError as exc:
+        raise HTTPException(504, "Tempo massimo del motore vocale superato") from exc
     except (ImportError, RuntimeError, OSError) as exc:
         logger.warning("Voice engine unavailable: %s", type(exc).__name__)
         raise HTTPException(503, "Motore vocale non pronto: verifica dipendenze e modelli locali.") from exc

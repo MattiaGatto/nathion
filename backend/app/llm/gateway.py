@@ -14,7 +14,7 @@ import time
 from collections.abc import AsyncIterator
 
 from app.core.config import Settings, get_settings
-from app.core.hosting import check_model, authorize_compute
+from app.core.hosting import check_model, authorize_compute, compute_slot
 from app.llm.base import ChatMessage, LLMProvider, ModelInfo
 from app.llm.ollama_provider import OllamaProvider
 from app.llm.compatible import CompatibleProvider
@@ -57,19 +57,23 @@ class LLMGateway:
     async def chat(
         self, messages: list[ChatMessage], model: str, provider: str | None = None
     ) -> str:
-        authorize_compute(model, provider or self._settings.default_llm_provider)
-        return await self.get_provider(provider).chat(messages, model)
+        with compute_slot(model, provider or self._settings.default_llm_provider):
+            return await self.get_provider(provider).chat(messages, model)
+
+    async def chat_structured(self, messages: list[ChatMessage], model: str, schema: dict, provider: str | None = None) -> str:
+        with compute_slot(model, provider or self._settings.default_llm_provider):
+            return await self.get_provider(provider).chat_structured(messages, model, schema)
 
     async def chat_stream(
         self, messages: list[ChatMessage], model: str, provider: str | None = None
     ) -> AsyncIterator[str]:
-        authorize_compute(model, provider or self._settings.default_llm_provider)
-        checked = time.monotonic()
-        async for chunk in self.get_provider(provider).chat_stream(messages, model):
-            if time.monotonic() - checked >= 1:
-                authorize_compute(model, provider or self._settings.default_llm_provider, charge=False)
-                checked = time.monotonic()
-            yield chunk
+        with compute_slot(model, provider or self._settings.default_llm_provider):
+            checked = time.monotonic()
+            async for chunk in self.get_provider(provider).chat_stream(messages, model):
+                if time.monotonic() - checked >= 1:
+                    authorize_compute(model, provider or self._settings.default_llm_provider, charge=False)
+                    checked = time.monotonic()
+                yield chunk
 
 
 _gateway: LLMGateway | None = None

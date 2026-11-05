@@ -81,3 +81,25 @@ async def test_output_limit_is_not_reported_as_complete(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_client(transport=transport, **kwargs))
     with pytest.raises(LLMProviderError, match="incompleta"):
         await OllamaProvider("http://local").chat([ChatMessage(role="user", content="test")], "test")
+
+
+@pytest.mark.asyncio
+async def test_ollama_proposals_use_schema_without_changing_normal_chat(monkeypatch):
+    import json
+    import httpx
+    from app.api.proposals import PLAN_SCHEMA
+    from app.llm.ollama_provider import OllamaProvider
+    captured = []
+    def handle(request):
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, text='{"message":{"content":"{}"},"done":true,"done_reason":"stop"}\n')
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handle), **kwargs))
+    provider = OllamaProvider("http://local")
+    await provider.chat_structured([], "model", PLAN_SCHEMA)
+    await provider.chat([], "model")
+    assert captured[0]["format"] == PLAN_SCHEMA
+    assert captured[0]["options"]["temperature"] == 0
+    assert "format" not in captured[1] and "temperature" not in captured[1]["options"]
+    coding = next(item for item in PLAN_SCHEMA["properties"]["tasks"]["items"]["anyOf"] if item["properties"]["agent_id"]["enum"] == ["coding"])
+    assert coding["properties"]["tool"] == {"type": "null"}

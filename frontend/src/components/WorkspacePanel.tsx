@@ -1,10 +1,11 @@
+import { PlanEditor, type PlannedTask } from "./PlanEditor";
 import { useAccount } from "./AccessGate";
 import { AccountsPanel } from "./AccountsPanel";
 import { useEffect, useState } from "react";
 import { api, workspaceRequest } from "../api/client";
 import { VoiceControls, type VoiceSegment } from "./VoiceControls";
 
-interface Agent { id: string; name: string; description: string; skills: string[]; model: string | null; memory_access: string; timeout_seconds: number; voice_profile: string; }
+interface Agent { tools?: string[]; id: string; name: string; description: string; skills: string[]; model: string | null; memory_access: string; timeout_seconds: number; voice_profile: string; }
 interface Memory { id: string; content: string; category: string; source: string; certainty: string; }
 interface Run { id: string; prompt: string; status: string; result: string; trace: Record<string, unknown>[]; }
 interface Action { id: string; tool: string; status: string; payload: string; result: string; }
@@ -17,6 +18,8 @@ export function WorkspacePanel({ model, onClose }: Props) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [planned, setPlanned] = useState<PlannedTask[] | null>(null);
+  const [plannedPrompt, setPlannedPrompt] = useState("");
   const [prompt, setPrompt] = useState("");
   const [note, setNote] = useState("");
   const [category, setCategory] = useState("project");
@@ -58,11 +61,19 @@ export function WorkspacePanel({ model, onClose }: Props) {
     return () => clearInterval(timer);
   }, [busy]);
 
-  async function execute() {
+  async function previewPlan() {
+    setBusy(true); setError("");
+    try {
+      const result = await workspaceRequest<{ tasks: PlannedTask[] }>("plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model }) });
+      setPlanned(result.tasks); setPlannedPrompt(prompt);
+    } catch (e) { setError(e instanceof Error ? e.message : "Piano non disponibile"); }
+    finally { setBusy(false); }
+  }
+  async function execute(usePlan = false) {
     if (!model || !prompt.trim()) return;
     setError(""); setBusy(true);
     try {
-      await workspaceRequest("runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model }) });
+      await workspaceRequest("runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model, ...(usePlan ? { tasks: planned } : {}) }) });
       await reload();
     } catch (e) { setError(e instanceof Error ? e.message : "Attività fallita"); }
     finally { setBusy(false); }
@@ -106,6 +117,11 @@ export function WorkspacePanel({ model, onClose }: Props) {
   async function findMemory() {
     try { setMemories(await workspaceRequest<Memory[]>(`memory?q=${encodeURIComponent(search)}`)); }
     catch (e) { setError(e instanceof Error ? e.message : "Ricerca fallita"); }
+  }
+  async function confirmMemory(memory: Memory) {
+    if (!window.confirm("Hai verificato questa informazione e vuoi indicarla come fatto?")) return;
+    try { await workspaceRequest(`memory/${memory.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: memory.content, category: memory.category, source: memory.source, certainty: "fact" }) }); await reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : "Aggiornamento fallito"); }
   }
   async function editMemory(memory: Memory) {
     const content = window.prompt("Aggiorna questa memoria", memory.content);
@@ -189,7 +205,9 @@ export function WorkspacePanel({ model, onClose }: Props) {
       <div className="flex flex-wrap gap-3">{agents.map((a) => <label key={a.id} className="text-xs">Voce · {a.name}<select aria-label={`Voce ${a.name}`} className="ml-2 rounded bg-nathion-panel p-2" value={a.voice_profile} onChange={(e) => configure(a, a.model ?? "", e.target.value)}>{!voiceProfiles.includes(a.voice_profile) && <option value={a.voice_profile}>Non disponibile: {a.voice_profile}</option>}{voiceProfiles.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile}</option>)}</select></label>)}</div>
       <section className="space-y-3"><h2 className="text-lg">Attività con agenti</h2><p className="text-sm text-nathion-muted">Descrivi il risultato desiderato. Gli specialisti vengono scelti in base alla richiesta; piano e risultati sono visibili nella timeline.</p>
         <textarea aria-label="Obiettivo attività" className="w-full rounded-xl bg-nathion-panel p-3" value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={12000} />
-        <button className={button} disabled={busy || !model || !prompt.trim()} onClick={execute}>{busy ? "Attività in corso…" : "Avvia attività"}</button>
+        <button className={button} disabled={busy || !model || !prompt.trim()} onClick={() => execute()}>{busy ? "Attività in corso…" : "Avvia attività"}</button>
+        <button className={button} disabled={busy || !model || !prompt.trim()} onClick={previewPlan}>Proponi piano con il modello</button>
+        {planned && plannedPrompt === prompt && <div className="space-y-2 rounded-xl border border-nathion-border p-3"><p className="text-sm">Piano proposto: controlla agenti, istruzioni, strumenti e dipendenze prima di avviare. Puoi modificarlo.</p><PlanEditor tasks={planned} agents={agents} onChange={setPlanned} /><button className={button} disabled={busy} onClick={() => execute(true)}>Approva piano e avvia</button><button className={button} onClick={() => setPlanned(null)}>Scarta piano</button></div>}
         {runs.map((run) => <article key={run.id} className="space-y-2 rounded-xl border border-nathion-border p-4"><h3>{run.prompt} · {label(run.status)}</h3><ol className="space-y-1 text-xs text-nathion-muted">{run.trace.map((event, i) => <li key={i}>{label(event.type)} {String(event.agent ?? event.task ?? "")}{event.detail ? `: ${String(event.detail)}` : ""}</li>)}</ol>{run.result && <p className="whitespace-pre-wrap text-sm">{run.result}</p>}<button className={button} disabled={run.status === "running"} onClick={() => eraseRun(run.id)}>Elimina attività</button></article>)}
       </section>
       {runs.filter((run) => run.status === "completed" && contributions(run).length > 0).slice(0, 5).map((run) => <section key={run.id} className="rounded-xl border border-nathion-border p-4"><h2 className="mb-3 text-sm">Ascolta gli agenti · {run.prompt}</h2><VoiceControls disabled={true} onTranscript={() => {}} reply={run.result} segments={contributions(run)} /></section>)}
@@ -200,7 +218,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
         <textarea aria-label="Nuova memoria" className="w-full rounded-xl bg-nathion-panel p-3" value={note} onChange={(e) => setNote(e.target.value)} maxLength={8000} />
         <select aria-label="Categoria memoria" className="bg-nathion-panel p-2" value={category} onChange={(e) => setCategory(e.target.value)}><option value="project">Progetto</option><option value="profile">Preferenza personale</option><option value="semantic">Conoscenza</option><option value="episodic">Evento</option></select>{" "}
         <button className={button} disabled={!note.trim()} onClick={remember}>Salva memoria</button>
-        {memories.map((m) => <article key={m.id} className="rounded-xl border border-nathion-border p-4"><p className="whitespace-pre-wrap">{m.content}</p><p className="mt-1 text-xs text-nathion-muted">{m.category} · {m.source} · {m.certainty}</p><button className={button} onClick={() => editMemory(m)}>Modifica</button>{" "}<button className={button} onClick={() => forget(m.id)}>Elimina</button></article>)}
+        {memories.map((m) => <article key={m.id} className="rounded-xl border border-nathion-border p-4"><p className="whitespace-pre-wrap">{m.content}</p><p className="mt-1 text-xs text-nathion-muted">{m.category} · {m.source} · {m.certainty}</p>{m.certainty === "inference" && <button className={button} onClick={() => confirmMemory(m)}>Conferma come fatto</button>}{" "}<button className={button} onClick={() => editMemory(m)}>Modifica</button>{" "}<button className={button} onClick={() => forget(m.id)}>Elimina</button></article>)}
       </section>
       {admin && <><section className="space-y-3"><h2 className="text-lg">Operazioni da approvare</h2>
         {decidingAction && <p role="status" className="text-sm text-nathion-muted">Decisione in corso…</p>}

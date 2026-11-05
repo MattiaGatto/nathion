@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from app.core.hosting import authorize_compute
+from app.core.hosting import compute_slot
 """Optional local vectors, with explicit lexical fallback and bounded RRF retrieval."""
 import json
 import math
@@ -11,8 +11,12 @@ from app.db.models import Memory, MemoryVector
 
 
 async def embedding(text: str) -> list[float]:
-    authorize_compute()
     settings = get_settings()
+    with compute_slot(None, "ollama"):
+        return await _embedding_request(text, settings)
+
+
+async def _embedding_request(text, settings):
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(settings.ollama_base_url.rstrip("/") + "/api/embed", json={
             "model": settings.memory_embedding_model, "input": text[:8000], "truncate": True,

@@ -3,11 +3,20 @@ Gestione della sessione database (SQLAlchemy, engine SQLite).
 """
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
+import sqlite3
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 from app.db.models import Base
+
+@event.listens_for(Engine, "connect")
+def sqlite_integrity(connection, record):
+    if isinstance(connection, sqlite3.Connection):
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA busy_timeout=5000")
+
 
 settings = get_settings()
 

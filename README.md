@@ -18,7 +18,7 @@ I modelli Whisper, Piper e mxbai embedding sono già stati preparati su questo P
 Apri [NATHION](http://localhost:4173). Accedi come **mattia** con la password
 iniziale nel file `backend/data/admin-initial-password.txt`, escluso da Git.
 Al primo accesso scegli una nuova password (almeno 12 caratteri).
-`backend/data/access-token.txt` � una chiave operatore per recupero e script:
+`backend/data/access-token.txt` è una chiave operatore per recupero e script:
 non condividerla con gli invitati. Su una nuova installazione puoi cambiare
 nome amministratore con le variabili `NATHION_ADMIN_USERNAME` e
 `NATHION_ADMIN_DISPLAY_NAME` prima del primo avvio.
@@ -37,10 +37,10 @@ Non cancellare il volume backend_data se vuoi conservare chiave e cronologia.
 ## Cosa puoi usare
 
 - Chat testuale persistente con streaming e interruzione della generazione.
-- Registrazione vocale, trascrizione locale modificabile, parziali e risposte Piper.
-- Sette agenti, skills Markdown/YAML e workflow con dipendenze, timeout e timeline.
+- Voce manuale o conversazione con fine turno automatica, frasi progressive e stop.
+- Sette agenti, skills e workflow con dipendenze; piani LLM da rivedere prima dell’avvio.
 - Modello e voce configurabili per agente, ascolto sequenziale dei contributi.
-- Memoria esplicita con categorie, fonte, certezza, deduplicazione e modifica.
+- Memoria esplicita e suggerimenti selettivi da approvare, con fonte e certezza.
 - Ricerca BM25 e semantica locale, con fallback dichiarato e stato di indicizzazione.
 - Calcolatrice e orologio autorizzati; cancellazioni e chiamate MCP con approvazione.
 - Attività locali programmate, una tantum o ricorrenti, con risultati persistiti.
@@ -64,12 +64,12 @@ configurati dal proprietario. Non viene concesso accesso arbitrario alla shell.
 
 Il collaudo Android richiede account/rete privata, permesso microfono e prova
 sul telefono. Le prove automatiche o con audio sintetico non sostituiscono
-questo collaudo. Conversazione full duplex e interruzione vocale automatica
-non sono ancora implementate; lo stop attuale è manuale.
+questo collaudo. Fine turno e interruzione parlando sono implementati con
+controlli locali; la qualità acustica sul tuo telefono resta da verificare.
 
 ## Sviluppo
 
-Python 3.12+ e Node.js sono necessari soltanto per lo sviluppo senza Docker.
+Python 3.12+ e Node.js 24 sono necessari soltanto per lo sviluppo senza Docker.
 Dal backend installa gli extra necessari e avvia uvicorn su loopback:
 
 ```powershell
@@ -108,3 +108,7 @@ I test automatici sono isolati da DB e modelli di produzione. Gli script
 reali richiedono i servizi attivi e salvano report in `backend/data/voice-check/`.
 La prova MCP crea un proprio server loopback e un DB temporaneo, poi li chiude.
 Nel frontend `npm run build` controlla TypeScript e produce la build.
+
+La verifica consolidata si esegue con `./scripts/verify.ps1`; aggiungi
+`-LocalAI` per le prove reali con container e modelli avviati. Il backup
+coerente del database si crea con `./scripts/backup.ps1`, anche con l'app attiva.

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, health, models, voice, voice_socket, workspace, tools, schedules
+from app.api import chat, health, models, voice, voice_socket, workspace, tools, schedules, proposals
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core import ownership  # Register tenant guards before serving requests
@@ -69,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(tools.router)
     app.include_router(schedules.router)
+    app.include_router(proposals.router)
 
     return app
 

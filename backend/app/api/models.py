@@ -51,7 +51,7 @@ async def get_settings_endpoint(db: Session = Depends(get_db)) -> SettingsOut:
     model_row = db.get(AppSettings, preference_key(_SETTINGS_MODEL_KEY))
     return SettingsOut(
         default_provider=default_provider(db),
-        default_model=model_row.value if model_row else None,
+        default_model=model_row.value if model_row and (identity.get().is_admin or model_row.value in identity.get().allowed_models) else None,
     )
 
 

@@ -15,7 +15,7 @@ import yaml
 from sqlalchemy.orm import Session
 
 from app.db.models import Memory, Run, AppSettings
-from app.core.identity import preference_key, owner_id
+from app.core.identity import preference_key, owner_id, identity
 from app.llm.base import ChatMessage
 from app.llm.gateway import LLMGateway
 from app.api.tools import calculate
@@ -58,6 +58,8 @@ def load_agents(db: Session) -> dict[str, Agent]:
     for key, agent in AGENTS.items():
         setting = db.get(AppSettings, preference_key(f"agent:{key}"))
         values = {**agent.model_dump(), **(json.loads(setting.value) if setting else {})}
+        if identity.get() and not identity.get().is_admin and values.get("model") not in identity.get().allowed_models:
+            values["model"] = None
         result[key] = Agent.model_validate(values)
     return result
 

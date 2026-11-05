@@ -1,3 +1,4 @@
+import { stopAllAudio } from "./audioOwner";
 import { useCallback, useEffect, useState } from "react";
 import { api, type ConversationSummary } from "./api/client";
 import { ChatWindow } from "./components/ChatWindow";
@@ -126,23 +127,23 @@ function Application() {
         onSelect={setActiveId}
         onNew={handleNewConversation}
         onDelete={handleDeleteConversation}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => { stopAllAudio(); setSettingsOpen(true); }}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
 
       <main className="relative min-w-0 flex-1 pt-10">
-        <button className="absolute right-4 top-2 text-xs text-nathion-accent" onClick={() => setWorkspaceOpen(true)}>Centro di controllo</button>
+        <button className="absolute right-4 top-2 text-xs text-nathion-accent" onClick={() => { stopAllAudio(); setWorkspaceOpen(true); }}>Centro di controllo</button>
         <button className="absolute left-4 top-2 text-xs text-nathion-muted" onClick={() => workspaceRequest("auth/logout", { method: "POST" }).then(() => window.location.reload())}>Esci</button>
         {workspaceOpen && <WorkspacePanel model={model} onClose={() => setWorkspaceOpen(false)} />}
-        {account?.role !== "admin" && !account?.hosted_access && <p role="status" className="px-4 py-2 text-sm text-amber-300">Il tuo spazio è attivo. L’uso dei modelli di questo PC attende l’approvazione dell’amministratore.</p>}
+        {account?.role !== "admin" && !account?.hosted_access && <p role="status" className="px-4 py-2 text-sm text-amber-300">Il tuo spazio Ã¨ attivo. Lâ€™uso dei modelli di questo PC attende lâ€™approvazione dellâ€™amministratore.</p>}
         {activeId && (
           <ChatWindow
             key={activeId}
             conversationId={activeId}
             model={model}
             onConversationUpdated={refreshConversations}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => { stopAllAudio(); setSettingsOpen(true); }}
           />
         )}
       </main>

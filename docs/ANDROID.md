@@ -43,4 +43,4 @@ Un ospite che usa il PC di Mattia riceve un invito NATHION e attende
 l'approvazione. Serve anche l'accesso di rete: due tailnet personali separate
 non comunicano automaticamente. Autorizza l'appartenenza alla rete o condividi
 la macchina secondo i controlli Tailscale. L'invito NATHION non modifica ACL,
-account o impostazioni Tailscale. Non è richiesto Docker sul solo telefono.
+account o impostazioni Tailscale. Non Ã¨ richiesto Docker sul solo telefono.
