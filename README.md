@@ -15,9 +15,13 @@ I modelli Whisper, Piper e mxbai embedding sono già stati preparati su questo P
 ./start.ps1
 ```
 
-Apri [NATHION](http://localhost:4173). La chiave personale è nel file
-`backend/data/access-token.txt`, escluso da Git. Il segreto originale è
-persistito nel volume Docker; non viene stampato dallo script.
+Apri [NATHION](http://localhost:4173). Accedi come **mattia** con la password
+iniziale nel file `backend/data/admin-initial-password.txt`, escluso da Git.
+Al primo accesso scegli una nuova password (almeno 12 caratteri).
+`backend/data/access-token.txt` � una chiave operatore per recupero e script:
+non condividerla con gli invitati. Su una nuova installazione puoi cambiare
+nome amministratore con le variabili `NATHION_ADMIN_USERNAME` e
+`NATHION_ADMIN_DISPLAY_NAME` prima del primo avvio.
 
 Senza lo script:
 
@@ -40,6 +44,8 @@ Non cancellare il volume backend_data se vuoi conservare chiave e cronologia.
 - Ricerca BM25 e semantica locale, con fallback dichiarato e stato di indicizzazione.
 - Calcolatrice e orologio autorizzati; cancellazioni e chiamate MCP con approvazione.
 - Attività locali programmate, una tantum o ricorrenti, con risultati persistiti.
+- Account con password, Mattia amministratore, inviti e approvazione del server.
+- Dati separati per utente, modelli consentiti, quote e sessioni revocabili.
 - PWA responsive e accesso autenticato; cache offline limitata all'interfaccia.
 - Provider compatibile opzionale, senza connessioni cloud obbligatorie.
 
@@ -51,6 +57,7 @@ configurati dal proprietario. Non viene concesso accesso arbitrario alla shell.
 
 - [Avvio, accesso, backup e configurazione](docs/OPERATIONS.md)
 - [Voce locale e verifiche](docs/VOICE.md)
+- [Account, ospiti e installazioni indipendenti](docs/ACCOUNTS.md)
 - [Procedura Android](docs/ANDROID.md)
 - [Capacità effettive e lavoro rimanente](docs/STATUS.md)
 - [Decisioni architetturali](docs/adr/)
@@ -94,6 +101,7 @@ python scripts/check_memory.py
 python scripts/check_multi_voice.py
 python scripts/check_cancellation.py
 python scripts/check_mcp_http.py
+python scripts/check_schedules.py
 ```
 
 I test automatici sono isolati da DB e modelli di produzione. Gli script

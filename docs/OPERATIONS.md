@@ -5,18 +5,24 @@ docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
 docker compose cp backend:/app/data/access-token.txt ./backend/data/access-token.txt
 ```
 
-Apri http://localhost:4173 e incolla la chiave dal file locale
-`backend/data/access-token.txt`. Non condividere questa chiave: d√† pieno accesso
-all'istanza personale. Il file √® escluso da Git; il segreto originale √® nel
-volume backend. La chiave non viene inviata nei parametri URL o nei log.
-L'autenticazione √® attiva per impostazione predefinita; i test la disattivano
-solo nelle fixture isolate. Non impostare NATHION_AUTH_ENABLED=false in uso normale.
+Accedi come `mattia` con la password iniziale copiata da `./start.ps1` in
+`backend/data/admin-initial-password.txt`. Il primo accesso richiede di
+sostituirla. Nelle installazioni nuove nome e nome visualizzato si configurano
+con `NATHION_ADMIN_USERNAME` e `NATHION_ADMIN_DISPLAY_NAME`.
 
-La sessione browser usa un cookie HttpOnly, SameSite Strict con durata 8 ore;
-su HTTPS ha anche Secure. Esci cancella il cookie del browser; una copia
-sottratta di un cookie resta valida fino alla scadenza. Ruotare la chiave
-nel volume invalida tutte le sessioni. Le richieste automatiche usano Bearer.
-Il backend verifica l'origine delle scritture e dei WebSocket.
+Le password sono salvate con Argon2id; le sessioni browser durano 8 ore e usano
+cookie HttpOnly, SameSite Strict e Secure su HTTPS. Il database conserva solo
+l'hash dei token. Logout revoca la sessione; cambio password e modifica dei
+permessi revocano tutte le sessioni dell'account. Le connessioni chat gi‡ aperte
+ricontrollano l'autorizzazione prima di una nuova richiesta e durante lo stream.
+Un calcolo nativo gi‡ iniziato puÚ terminare: la revoca non annulla effetti gi‡
+avvenuti. Le chiamate vocali ricontrollano autorizzazioni a ogni segmento.
+
+La chiave operatore `backend/data/access-token.txt` resta per gli script locali
+e per il recupero amministratore. Consente pieno accesso: non condividerla.
+Gli invitati usano esclusivamente i propri account. Vedi [Account](ACCOUNTS.md).
+L'autenticazione Ë attiva per default; i test la disattivano solo in fixture
+isolate. Il backend verifica l'origine di scritture e WebSocket.
 
 Il Centro di controllo contiene agenti, workflow e memoria. La chat ordinaria
 resta il percorso diretto al modello; il pulsante Avvia attivit√† usa realmente

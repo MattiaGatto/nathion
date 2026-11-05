@@ -1,3 +1,5 @@
+import { useAccount } from "./AccessGate";
+import { AccountsPanel } from "./AccountsPanel";
 import { useEffect, useState } from "react";
 import { api, workspaceRequest } from "../api/client";
 import { VoiceControls, type VoiceSegment } from "./VoiceControls";
@@ -11,6 +13,7 @@ interface ScheduleItem { id: string; prompt: string; model: string; next_run_at:
 interface Props { model: string | null; onClose: () => void; }
 
 export function WorkspacePanel({ model, onClose }: Props) {
+  const admin = useAccount()?.role === "admin";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -37,10 +40,10 @@ export function WorkspacePanel({ model, onClose }: Props) {
   const [scheduleInterval, setScheduleInterval] = useState(0);
   const [decidingAction, setDecidingAction] = useState<string | null>(null);
   useEffect(() => { api.voiceStatus().then((status) => setVoiceProfiles(status.profiles)).catch(() => {}); }, []);
-  useEffect(() => { workspaceRequest<{ id: string; servers?: string[] }[]>("tools").then((tools) => setMcpServers(tools.find((tool) => tool.id === "mcp")?.servers ?? [])).catch(() => {}); }, []);
+  useEffect(() => { if (!admin) return; workspaceRequest<{ id: string; servers?: string[] }[]>("tools").then((tools) => setMcpServers(tools.find((tool) => tool.id === "mcp")?.servers ?? [])).catch(() => {}); }, []);
 
   async function reload() {
-    const [a, m, r, t, status, jobs] = await Promise.all([workspaceRequest<Agent[]>("agents"), workspaceRequest<Memory[]>("memory"), workspaceRequest<Run[]>("runs"), workspaceRequest<Action[]>("tools/actions"), workspaceRequest<{ model: string; total: number; indexed: number }>("memory-status"), workspaceRequest<ScheduleItem[]>("schedules")]);
+    const [a, m, r, t, status, jobs] = await Promise.all([workspaceRequest<Agent[]>("agents"), workspaceRequest<Memory[]>("memory"), workspaceRequest<Run[]>("runs"), (admin ? workspaceRequest<Action[]>("tools/actions") : Promise.resolve([])), workspaceRequest<{ model: string; total: number; indexed: number }>("memory-status"), (admin ? workspaceRequest<ScheduleItem[]>("schedules") : Promise.resolve([]))]);
     setAgents(a); setMemories(m); setRuns(r);
     setActions(t);
     setMemoryStatus(status);
@@ -50,7 +53,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       workspaceRequest<Run[]>("runs").then(setRuns).catch(() => {});
-      workspaceRequest<ScheduleItem[]>("schedules").then(setSchedules).catch(() => {});
+      (admin ? workspaceRequest<ScheduleItem[]>("schedules") : Promise.resolve([])).then(setSchedules).catch(() => {});
     }, busy ? 1500 : 5000);
     return () => clearInterval(timer);
   }, [busy]);
@@ -72,6 +75,12 @@ export function WorkspacePanel({ model, onClose }: Props) {
     } catch (e) { setError(e instanceof Error ? e.message : "Salvataggio fallito"); }
   }
   async function forget(id: string) {
+    if (!admin) {
+      if (!window.confirm("Eliminare questa memoria personale?")) return;
+      try { await workspaceRequest(`memory/${id}`, { method: "DELETE" }); await reload(); }
+      catch (e) { setError(e instanceof Error ? e.message : "Eliminazione fallita"); }
+      return;
+    }
     try { await workspaceRequest("tools/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool: "memory.delete", memory_id: id }) }); await reload(); }
     catch (e) { setError(e instanceof Error ? e.message : "Eliminazione fallita"); }
   }
@@ -174,6 +183,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
   return <section className="absolute inset-0 z-30 overflow-y-auto bg-nathion-bg p-5 text-nathion-text" aria-label="Centro di controllo">
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-xl">Centro di controllo</h1><div className="flex gap-2"><button className={button} onClick={exportData}>Esporta dati</button><button className={button} onClick={onClose}>Torna alla chat</button></div></header>
+      <AccountsPanel />
       {error && <p role="alert" className="text-red-300">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{agents.map((a) => <article key={a.id} className="rounded-xl border border-nathion-border p-4"><h2>{a.name}</h2><p className="text-sm text-nathion-muted">{a.description}</p><p className="mt-2 text-xs">Skills: {a.skills.join(", ") || "nessuna"}</p><label className="mt-3 block text-xs">Modello preferito<input key={a.model ?? "default"} aria-label={`Modello ${a.name}`} defaultValue={a.model ?? ""} placeholder="Usa modello della chat" className="mt-1 w-full rounded bg-nathion-surface p-2" onBlur={(e) => { if (e.target.value.trim() !== (a.model ?? "")) configure(a, e.target.value); }} /></label></article>)}</div>
       <div className="flex flex-wrap gap-3">{agents.map((a) => <label key={a.id} className="text-xs">Voce · {a.name}<select aria-label={`Voce ${a.name}`} className="ml-2 rounded bg-nathion-panel p-2" value={a.voice_profile} onChange={(e) => configure(a, a.model ?? "", e.target.value)}>{!voiceProfiles.includes(a.voice_profile) && <option value={a.voice_profile}>Non disponibile: {a.voice_profile}</option>}{voiceProfiles.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile}</option>)}</select></label>)}</div>
@@ -192,7 +202,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
         <button className={button} disabled={!note.trim()} onClick={remember}>Salva memoria</button>
         {memories.map((m) => <article key={m.id} className="rounded-xl border border-nathion-border p-4"><p className="whitespace-pre-wrap">{m.content}</p><p className="mt-1 text-xs text-nathion-muted">{m.category} · {m.source} · {m.certainty}</p><button className={button} onClick={() => editMemory(m)}>Modifica</button>{" "}<button className={button} onClick={() => forget(m.id)}>Elimina</button></article>)}
       </section>
-      <section className="space-y-3"><h2 className="text-lg">Operazioni da approvare</h2>
+      {admin && <><section className="space-y-3"><h2 className="text-lg">Operazioni da approvare</h2>
         {decidingAction && <p role="status" className="text-sm text-nathion-muted">Decisione in corso…</p>}
         {actions.filter((a) => a.status === "pending").map((a) => <article key={a.id} className="rounded-xl border border-nathion-border p-4">{a.tool === "mcp" ? <><p>Server {JSON.parse(a.payload).server} · {JSON.parse(a.payload).tool}</p><pre className="overflow-x-auto whitespace-pre-wrap text-xs">{JSON.stringify(JSON.parse(a.payload).arguments, null, 2)}</pre></> : <p>Eliminare la memoria: {memories.find((m) => m.id === JSON.parse(a.payload).memory_id)?.content ?? "Azzera la ricerca per rivedere la memoria interessata."}</p>}<div className="mt-3 flex gap-2"><button className={button} disabled={a.tool !== "mcp" && !memories.some((m) => m.id === JSON.parse(a.payload).memory_id)} onClick={() => decide(a.id, "approve")}>Approva esecuzione</button><button className={button} onClick={() => decide(a.id, "reject")}>Rifiuta</button></div></article>)}
         {!actions.some((a) => a.status === "pending") && <p className="text-sm text-nathion-muted">Nessuna operazione in attesa.</p>}
@@ -201,6 +211,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
       <section className="space-y-3"><h2 className="text-lg">Calcolatrice locale</h2><input aria-label="Espressione aritmetica" className="rounded-lg bg-nathion-panel p-3" value={expression} onChange={(e) => setExpression(e.target.value)} maxLength={200} />{" "}<button className={button} onClick={calculate}>Calcola</button><output className="ml-3">{calculation}</output></section>
       <section className="space-y-3"><h2 className="text-lg">Attività programmate</h2><p className="text-sm text-nathion-muted">Eseguite con Ollama sul PC acceso, senza shell o chiamate MCP automatiche. I risultati compaiono nella timeline. La pausa ferma le esecuzioni future.</p><textarea aria-label="Obiettivo programmato" className="w-full rounded bg-nathion-panel p-3" maxLength={12000} value={schedulePrompt} onChange={(e) => setSchedulePrompt(e.target.value)} /><div className="flex flex-wrap gap-3"><label className="text-xs">Modello Ollama locale<input aria-label="Modello programmazione" className="ml-2 rounded bg-nathion-panel p-2" value={scheduleModel} onChange={(e) => setScheduleModel(e.target.value)} /></label><input aria-label="Data e ora locale" className="rounded bg-nathion-panel p-2" type="datetime-local" value={scheduleWhen} onChange={(e) => setScheduleWhen(e.target.value)} /><select aria-label="Ripetizione" className="rounded bg-nathion-panel p-2" value={scheduleInterval} onChange={(e) => setScheduleInterval(Number(e.target.value))}><option value={0}>Una volta</option><option value={3600}>Ogni ora</option><option value={86400}>Ogni 24 ore</option><option value={604800}>Ogni 7 giorni</option></select><button className={button} disabled={!schedulePrompt.trim() || !scheduleWhen || !scheduleModel.trim()} onClick={addSchedule}>Programma</button></div>{schedules.map((job) => <article key={job.id} className="rounded-xl border border-nathion-border p-4"><p>{job.prompt}</p><p className="my-2 text-xs text-nathion-muted">{new Date(job.next_run_at).toLocaleString("it-IT")} · {job.enabled ? "Attiva" : "In pausa / conclusa"} · Ultimo esito: {job.last_status}</p><button className={button} onClick={() => toggleSchedule(job)}>{job.enabled ? "Metti in pausa" : "Riattiva"}</button>{" "}<button className={button} onClick={() => removeSchedule(job.id)}>Elimina programmazione</button></article>)}</section>
       <section className="space-y-3"><h2 className="text-lg">Connessioni MCP</h2>{mcpServers.length === 0 ? <p className="text-sm text-nathion-muted">Nessun server configurato dal proprietario. Nessuna connessione esterna attiva.</p> : <><select aria-label="Server MCP" className="rounded bg-nathion-panel p-2" value={mcpServer} onChange={(e) => discoverRemote(e.target.value)}><option value="">Seleziona server</option>{mcpServers.map((server) => <option key={server}>{server}</option>)}</select>{" "}<select aria-label="Strumento MCP" className="rounded bg-nathion-panel p-2" value={remoteTool} onChange={(e) => setRemoteTool(e.target.value)}>{remoteTools.map((tool) => <option key={tool.name}>{tool.name}</option>)}</select><p className="text-sm">{remoteTools.find((tool) => tool.name === remoteTool)?.description}</p><textarea aria-label="Argomenti JSON strumento MCP" className="w-full rounded bg-nathion-panel p-3 font-mono text-sm" maxLength={16000} value={remoteArguments} onChange={(e) => setRemoteArguments(e.target.value)} /><button className={button} disabled={!remoteTool} onClick={prepareRemote}>Prepara richiesta da approvare</button></>}</section>
+      </>}
     </div>
   </section>;
 }

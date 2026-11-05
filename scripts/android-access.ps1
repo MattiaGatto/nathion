@@ -38,5 +38,5 @@ try {
     & $tailExecutable serve --bg --https=8443 http://127.0.0.1:4173
     if ($LASTEXITCODE -ne 0) { throw 'Serve non attivo. Completa le eventuali richieste HTTPS di Tailscale.' }
     Write-Output ('Apri in Chrome su Android: ' + $origin)
-    Write-Output 'Usa la chiave personale, consenti il microfono e installa la PWA dal browser.'
+    Write-Output 'Accedi con nome utente e password, consenti il microfono e installa la PWA dal browser.'
 } finally { Pop-Location }

@@ -12,10 +12,15 @@ from enum import Enum
 
 from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, Text, Boolean, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from app.core.identity import owner_id
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class OwnedRecord:
+    owner_id: Mapped[str] = mapped_column(String(36), default=owner_id, index=True)
 
 
 def _uuid() -> str:
@@ -32,7 +37,7 @@ class MessageRole(str, Enum):
     system = "system"
 
 
-class Conversation(Base):
+class Conversation(OwnedRecord, Base):
     __tablename__ = "conversations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -57,7 +62,7 @@ class Conversation(Base):
         self.updated_at = _now()
 
 
-class Message(Base):
+class Message(OwnedRecord, Base):
     __tablename__ = "messages"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -83,7 +88,7 @@ class AppSettings(Base):
     )
 
 
-class Memory(Base):
+class Memory(OwnedRecord, Base):
     __tablename__ = "memories"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     content: Mapped[str] = mapped_column(Text)
@@ -95,14 +100,14 @@ class Memory(Base):
     vectors: Mapped[list["MemoryVector"]] = relationship(cascade="all, delete-orphan")
 
 
-class MemoryVector(Base):
+class MemoryVector(OwnedRecord, Base):
     __tablename__ = "memory_vectors"
     memory_id: Mapped[str] = mapped_column(ForeignKey("memories.id"), primary_key=True)
     model: Mapped[str] = mapped_column(String(200))
     embedding: Mapped[str] = mapped_column(Text)
 
 
-class Run(Base):
+class Run(OwnedRecord, Base):
     __tablename__ = "runs"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     prompt: Mapped[str] = mapped_column(Text)
@@ -112,7 +117,7 @@ class Run(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
-class ToolAction(Base):
+class ToolAction(OwnedRecord, Base):
     __tablename__ = "tool_actions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tool: Mapped[str] = mapped_column(String(50))
@@ -122,7 +127,7 @@ class ToolAction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
-class Schedule(Base):
+class Schedule(OwnedRecord, Base):
     __tablename__ = "schedules"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     prompt: Mapped[str] = mapped_column(Text)
@@ -133,3 +138,43 @@ class Schedule(Base):
     last_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     last_status: Mapped[str] = mapped_column(String(30), default="never")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    username: Mapped[str] = mapped_column(String(32), unique=True)
+    display_name: Mapped[str] = mapped_column(String(80))
+    password_hash: Mapped[str] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(String(20), default="member")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    hosted_access: Mapped[bool] = mapped_column(Boolean, default=False)
+    allowed_models: Mapped[str] = mapped_column(Text, default="[]")
+    daily_limit: Mapped[int] = mapped_column(Integer, default=50)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    operator: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Invitation(Base):
+    __tablename__ = "invitations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    label: Mapped[str] = mapped_column(String(100))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    used_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class UsageDay(Base):
+    __tablename__ = "usage_days"
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    used: Mapped[int] = mapped_column(Integer, default=0)

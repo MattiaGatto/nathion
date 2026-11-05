@@ -1,3 +1,4 @@
+from app.core.hosting import authorize_compute
 """Local voice adapters. No automatic downloads or retained recordings."""
 import asyncio
 import io
@@ -99,6 +100,7 @@ def status():
 
 
 async def execute(function, argument):
+    authorize_compute()
     # Reject overlapping jobs instead of allowing an unbounded inference queue.
     if not _admission.acquire(blocking=False):
         raise HTTPException(429, "Motore vocale occupato, riprova tra poco.")

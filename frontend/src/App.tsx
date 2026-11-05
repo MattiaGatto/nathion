@@ -4,7 +4,7 @@ import { ChatWindow } from "./components/ChatWindow";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkspacePanel } from "./components/WorkspacePanel";
-import { AccessGate } from "./components/AccessGate";
+import { AccessGate, useAccount } from "./components/AccessGate";
 import { workspaceRequest } from "./api/client";
 
 export default function App() {
@@ -12,6 +12,7 @@ export default function App() {
 }
 
 function Application() {
+  const account = useAccount();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -48,9 +49,10 @@ function Application() {
           // nulla e la UI lo segnala (vedi Composer/EmptyState).
           try {
             const models = await api.listModels();
-            if (!cancelled && models[0]) {
-              setModel(models[0].id);
-              await api.updateSettings({ default_provider: settings.default_provider, default_model: models[0].id });
+            const preferred = models.find((item) => item.id === "llama3.2:3b") ?? models[0];
+            if (!cancelled && preferred) {
+              setModel(preferred.id);
+              await api.updateSettings({ default_provider: settings.default_provider, default_model: preferred.id });
             }
           } catch {
             // Silenzioso: l'utente vedra' comunque lo stato "nessun
@@ -133,6 +135,7 @@ function Application() {
         <button className="absolute right-4 top-2 text-xs text-nathion-accent" onClick={() => setWorkspaceOpen(true)}>Centro di controllo</button>
         <button className="absolute left-4 top-2 text-xs text-nathion-muted" onClick={() => workspaceRequest("auth/logout", { method: "POST" }).then(() => window.location.reload())}>Esci</button>
         {workspaceOpen && <WorkspacePanel model={model} onClose={() => setWorkspaceOpen(false)} />}
+        {account?.role !== "admin" && !account?.hosted_access && <p role="status" className="px-4 py-2 text-sm text-amber-300">Il tuo spazio è attivo. L’uso dei modelli di questo PC attende l’approvazione dell’amministratore.</p>}
         {activeId && (
           <ChatWindow
             key={activeId}

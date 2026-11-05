@@ -1,3 +1,5 @@
+from fastapi import HTTPException
+from app.core.hosting import authorize_compute
 """Optional local vectors, with explicit lexical fallback and bounded RRF retrieval."""
 import json
 import math
@@ -9,6 +11,7 @@ from app.db.models import Memory, MemoryVector
 
 
 async def embedding(text: str) -> list[float]:
+    authorize_compute()
     settings = get_settings()
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(settings.ollama_base_url.rstrip("/") + "/api/embed", json={
@@ -29,12 +32,12 @@ async def index_memory(db, memory: Memory) -> bool:
     model = get_settings().memory_embedding_model
     if not model:
         return False
-    current = db.get(MemoryVector, memory.id)
+    current = db.query(MemoryVector).filter_by(memory_id=memory.id).first()
     if current and current.model == model:
         return True
     try:
         vector = await embedding(memory.content)
-    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+    except (HTTPException, httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
         return False
     if current is None:
         current = MemoryVector(memory_id=memory.id, model=model, embedding="[]")
@@ -52,7 +55,7 @@ async def retrieve_context(db, query: str, lexical, limit: int = 5):
         return lexical[:limit], "bm25"
     try:
         query_vector = await embedding(query)
-    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+    except (HTTPException, httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
         return lexical[:limit], "bm25-fallback"
     semantic = []
     for memory, vector in candidates:

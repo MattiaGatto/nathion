@@ -1,3 +1,6 @@
+from app.core.identity import preference_key, owner_id
+from app.core.hosting import check_model
+from app.core.ownership import owned_get
 import json
 import asyncio
 from threading import Lock
@@ -25,11 +28,12 @@ def agents(db: Session = Depends(get_db)):
 
 @router.patch("/agents/{agent_id}")
 def configure_agent(agent_id: str, body: AgentPatch, db: Session = Depends(get_db)):
+    check_model(body.model, "ollama")
     if agent_id not in AGENTS:
         raise HTTPException(404, "Agente non trovato")
     if body.voice_profile != "default" and body.voice_profile not in get_settings().voice_profiles:
         raise HTTPException(422, "Profilo vocale non configurato")
-    key = f"agent:{agent_id}"
+    key = preference_key(f"agent:{agent_id}")
     setting = db.get(AppSettings, key)
     if not setting:
         setting = AppSettings(key=key, value="{}")
@@ -73,7 +77,7 @@ async def remember(body: MemoryIn, response: Response, db: Session = Depends(get
 
 @router.delete("/memory/{memory_id}", status_code=204)
 def forget(memory_id: str, db: Session = Depends(get_db)):
-    row = db.get(Memory, memory_id)
+    row = owned_get(db, Memory, memory_id)
     if not row:
         raise HTTPException(404, "Memoria non trovata")
     db.delete(row); db.commit()
@@ -81,7 +85,7 @@ def forget(memory_id: str, db: Session = Depends(get_db)):
 
 @router.put("/memory/{memory_id}")
 async def update_memory(memory_id: str, body: MemoryIn, response: Response, db: Session = Depends(get_db)):
-    row = db.get(Memory, memory_id)
+    row = owned_get(db, Memory, memory_id)
     if not row:
         raise HTTPException(404, "Memoria non trovata")
     try:
@@ -137,7 +141,7 @@ def runs(db: Session = Depends(get_db)):
 
 @router.get("/runs/{run_id}")
 def run_detail(run_id: str, db: Session = Depends(get_db)):
-    row = db.get(Run, run_id)
+    row = owned_get(db, Run, run_id)
     if not row:
         raise HTTPException(404, "Attività non trovata")
     return run_out(row)
@@ -145,7 +149,7 @@ def run_detail(run_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/runs/{run_id}", status_code=204)
 def delete_run(run_id: str, db: Session = Depends(get_db)):
-    row = db.get(Run, run_id)
+    row = owned_get(db, Run, run_id)
     if not row:
         raise HTTPException(404, "Attività non trovata")
     if row.status == "running":
@@ -159,11 +163,12 @@ def export_data(db: Session = Depends(get_db)):
     def rows(model):
         fields = [column.key for column in inspect(model).column_attrs]
         return [{field: getattr(row, field) for field in fields} for row in db.query(model).all()]
+    prefix = "" if owner_id() == "owner" else f"user:{owner_id()}:"
     preferences = db.query(AppSettings).all()
     return {"format_version": 1, "conversations": rows(Conversation), "messages": rows(Message),
             "memory": rows(Memory), "runs": rows(Run), "tool_actions": rows(ToolAction), "schedules": rows(Schedule),
-            "preferences": [{"key": row.key, "value": row.value} for row in preferences
-                            if row.key in {"default_model", "default_provider"} or row.key.startswith("agent:")]}
+            "preferences": [{"key": row.key[len(prefix):], "value": row.value} for row in preferences
+                            if row.key in {prefix + "default_model", prefix + "default_provider"} or row.key.startswith(prefix + "agent:")]}
 
 
 @router.post("/runs")

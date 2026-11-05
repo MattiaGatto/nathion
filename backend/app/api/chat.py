@@ -1,3 +1,5 @@
+from app.core.hosting import authorize_compute
+from app.core.ownership import owned_get
 """
 API di chat: CRUD conversazioni su REST, scambio messaggi in streaming
 su WebSocket.
@@ -76,7 +78,7 @@ async def list_conversations(db: Session = Depends(get_db)) -> list[Conversation
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetailOut)
 async def get_conversation(conversation_id: str, db: Session = Depends(get_db)) -> Conversation:
-    conversation = db.get(Conversation, conversation_id)
+    conversation = owned_get(db, Conversation, conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversazione non trovata")
     return conversation
@@ -84,7 +86,7 @@ async def get_conversation(conversation_id: str, db: Session = Depends(get_db)) 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
 async def delete_conversation(conversation_id: str, db: Session = Depends(get_db)) -> None:
-    conversation = db.get(Conversation, conversation_id)
+    conversation = owned_get(db, Conversation, conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversazione non trovata")
     db.delete(conversation)  # cascade="all, delete-orphan" elimina anche i messaggi
@@ -100,10 +102,11 @@ async def send_message(
 ) -> Conversation:
     """Versione non-streaming (REST), usata nei test automatici e come
     fallback se il client non vuole gestire il WebSocket."""
-    conversation = db.get(Conversation, conversation_id)
+    conversation = owned_get(db, Conversation, conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversazione non trovata")
 
+    authorize_compute(body.model, body.provider or default_provider(db), charge=False)
     user_message = Message(
         conversation_id=conversation_id, role=MessageRole.user, content=body.content
     )
@@ -140,7 +143,7 @@ async def chat_websocket(
     gateway: LLMGateway = Depends(get_gateway),
 ) -> None:
     await websocket.accept()
-    conversation = db.get(Conversation, conversation_id)
+    conversation = owned_get(db, Conversation, conversation_id)
     if conversation is None:
         await websocket.send_json({"type": "error", "detail": "Conversazione non trovata"})
         await websocket.close(code=4404)
@@ -158,6 +161,8 @@ async def chat_websocket(
             db.add(message)
             db.commit()
             await websocket.send_json({"type": "done", "message_id": message.id})
+        except HTTPException as exc:
+            await websocket.send_json({"type": "error", "detail": exc.detail})
         except (LLMProviderError, ValueError) as exc:
             await websocket.send_json({"type": "error", "detail": str(exc)})
         except (WebSocketDisconnect, OSError):
@@ -192,6 +197,11 @@ async def chat_websocket(
                 body = SendMessageIn(content=content, model=model, provider=provider)
             except ValidationError:
                 await websocket.send_json({"type": "error", "detail": "Messaggio non valido (massimo 12000 caratteri)."})
+                continue
+            try:
+                authorize_compute(model, provider or default_provider(db), charge=False)
+            except HTTPException as exc:
+                await websocket.send_json({"type": "error", "detail": exc.detail})
                 continue
             db.add(Message(conversation_id=conversation_id, role=MessageRole.user, content=body.content))
             _touch_and_maybe_title(conversation, body.content)

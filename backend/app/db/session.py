@@ -31,6 +31,8 @@ def init_db() -> None:
     """Crea le tabelle se non esistono. Per questa milestone niente
     migration tool (Alembic) ancora: viene introdotto quando lo schema
     inizia a cambiare in modo incompatibile tra ambienti."""
+    from app.db.migrations import migrate_ownership
+    migrate_ownership(engine)
     Base.metadata.create_all(bind=engine)
 
 

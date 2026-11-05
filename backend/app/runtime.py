@@ -1,3 +1,4 @@
+from app.core.hosting import authorize_compute
 """Small bounded agent runtime; trusted skills and explicit, inspectable memory."""
 import asyncio
 import hashlib
@@ -14,6 +15,7 @@ import yaml
 from sqlalchemy.orm import Session
 
 from app.db.models import Memory, Run, AppSettings
+from app.core.identity import preference_key, owner_id
 from app.llm.base import ChatMessage
 from app.llm.gateway import LLMGateway
 from app.api.tools import calculate
@@ -54,7 +56,7 @@ class AgentPatch(BaseModel):
 def load_agents(db: Session) -> dict[str, Agent]:
     result = {}
     for key, agent in AGENTS.items():
-        setting = db.get(AppSettings, f"agent:{key}")
+        setting = db.get(AppSettings, preference_key(f"agent:{key}"))
         values = {**agent.model_dump(), **(json.loads(setting.value) if setting else {})}
         result[key] = Agent.model_validate(values)
     return result
@@ -98,7 +100,8 @@ def fingerprint(body: MemoryIn) -> str:
     normalized = " ".join(body.content.casefold().split())
     if not normalized:
         raise ValueError("Memoria vuota")
-    return hashlib.sha256(f"{body.category}:{body.certainty}:{normalized}".encode()).hexdigest()
+    scope = "" if owner_id() == "owner" else owner_id() + ":"
+    return hashlib.sha256(f"{scope}{body.category}:{body.certainty}:{normalized}".encode()).hexdigest()
 
 
 def retrieve(db: Session, query: str, limit: int = 5) -> list[Memory]:
@@ -167,6 +170,7 @@ def plan(prompt: str) -> list[Task]:
 
 
 async def execute_run(body: RunIn, db: Session, gateway: LLMGateway) -> Run:
+    authorize_compute(body.model, body.provider, charge=False)
     tasks = body.tasks or plan(body.prompt)
     agents = load_agents(db)
     skills = discover_skills()
@@ -191,6 +195,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway) -> Run:
             if task.tool:
                 if task.tool not in agent.tools:
                     raise PermissionError("Strumento non autorizzato per questo agente")
+                authorize_compute()
                 result = str(calculate(task.instruction)) if task.tool == "calculator" else datetime.now(timezone.utc).isoformat()
                 outputs[task.id] = result
                 event("tool", task=task.id, agent=agent.id, tool=task.tool, result=result)

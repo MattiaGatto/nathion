@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     piper_model_path: str = "./models/voice.onnx"
     voice_language: str = "it"
     voice_profiles: dict[str, str] = {}
+    admin_username: str = Field(default="mattia", pattern=r"^[a-z0-9][a-z0-9_.-]{2,31}$")
+    admin_display_name: str = "Mattia"
     auth_enabled: bool = True
     auth_token_file: str = "./data/access-token.txt"
     auth_cookie_secure: bool = False

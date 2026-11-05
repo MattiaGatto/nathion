@@ -41,6 +41,7 @@ export interface ConversationDetail extends ConversationSummary {
 
 async function handle<T>(response: Response): Promise<T> {
   if (!response.ok) {
+    if (response.status === 401 && !response.url.includes("/auth/")) window.location.reload();
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail ?? `Richiesta fallita (${response.status})`);
   }

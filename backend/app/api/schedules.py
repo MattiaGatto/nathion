@@ -1,3 +1,4 @@
+from app.core.ownership import owned_get
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -58,7 +59,7 @@ def create_schedule(body: ScheduleIn, db: Session = Depends(get_db)):
 
 @router.patch("/{schedule_id}")
 def set_active(schedule_id: str, body: ActiveIn, db: Session = Depends(get_db)):
-    row = db.get(Schedule, schedule_id)
+    row = owned_get(db, Schedule, schedule_id)
     if not row:
         raise HTTPException(404, "Automazione non trovata")
     row.enabled = body.enabled
@@ -68,7 +69,7 @@ def set_active(schedule_id: str, body: ActiveIn, db: Session = Depends(get_db)):
 
 @router.delete("/{schedule_id}", status_code=204)
 def delete_schedule(schedule_id: str, db: Session = Depends(get_db)):
-    row = db.get(Schedule, schedule_id)
+    row = owned_get(db, Schedule, schedule_id)
     if not row:
         raise HTTPException(404, "Automazione non trovata")
     if row.last_status == "running":

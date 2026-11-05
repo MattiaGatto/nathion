@@ -13,6 +13,11 @@ try {
     [IO.Directory]::CreateDirectory($dataPath) | Out-Null
     docker compose cp backend:/app/data/access-token.txt ./backend/data/access-token.txt
     if ($LASTEXITCODE -ne 0) { throw 'Non è stato possibile copiare la chiave locale.' }
+    docker compose exec -T backend python -c "from pathlib import Path; raise SystemExit(0 if Path('/app/data/admin-initial-password.txt').is_file() else 1)"
+    if ($LASTEXITCODE -eq 0) {
+        docker compose cp backend:/app/data/admin-initial-password.txt ./backend/data/admin-initial-password.txt
+        Write-Output ('Password iniziale amministratore nel file: ' + (Join-Path $dataPath 'admin-initial-password.txt'))
+    }
     Write-Output 'NATHION avviato: http://localhost:4173'
     Write-Output ('La chiave di accesso è nel file: ' + (Join-Path $dataPath 'access-token.txt'))
     Write-Output 'Nessuna credenziale è stata stampata o aggiunta a Git.'

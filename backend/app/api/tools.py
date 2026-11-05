@@ -1,3 +1,4 @@
+from app.core.ownership import owned_get
 """Allowlisted local tools. Effects require an authenticated owner's approval."""
 import ast
 import json
@@ -87,7 +88,7 @@ def actions(db: Session = Depends(get_db)):
 
 @router.delete("/actions/{action_id}", status_code=204)
 def delete_action(action_id: str, db: Session = Depends(get_db)):
-    action = db.get(ToolAction, action_id)
+    action = owned_get(db, ToolAction, action_id)
     if not action:
         raise HTTPException(404, "Operazione non trovata")
     if action.status == "executing":
@@ -113,7 +114,7 @@ def execute(body: ToolIn, db: Session = Depends(get_db)):
             return {"status": "completed", "result": calculate(body.expression)}
         except (ValueError, SyntaxError, ArithmeticError, OverflowError) as exc:
             raise HTTPException(422, "Espressione non valida o oltre i limiti") from exc
-    if not db.get(Memory, body.memory_id):
+    if not owned_get(db, Memory, body.memory_id):
         raise HTTPException(404, "Memoria non trovata")
     action = ToolAction(tool=body.tool, payload=json.dumps({"memory_id": body.memory_id}))
     db.add(action); db.commit(); db.refresh(action)
@@ -128,7 +129,7 @@ async def decide(action_id: str, decision: Literal["approve", "reject"], db: Ses
     if changed.rowcount != 1:
         db.rollback()
         raise HTTPException(409, "Azione inesistente o già decisa")
-    action = db.get(ToolAction, action_id)
+    action = owned_get(db, ToolAction, action_id)
     if decision == "approve" and action.tool == "mcp":
         # Persist the claim before crossing the network. A crash never retries
         # an operation whose remote effect cannot be established.
@@ -151,7 +152,7 @@ async def decide(action_id: str, decision: Literal["approve", "reject"], db: Ses
             action.result = json.dumps({"detail": "Esito remoto non verificabile. Nessun nuovo tentativo automatico.", "error": type(exc).__name__})
     elif decision == "approve":
         memory_id = json.loads(action.payload)["memory_id"]
-        memory = db.get(Memory, memory_id)
+        memory = owned_get(db, Memory, memory_id)
         if memory:
             db.delete(memory)
         action.status = "completed"
