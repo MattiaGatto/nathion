@@ -3,9 +3,13 @@ from app.core.hosting import check_model
 from app.core.ownership import owned_get
 import json
 import asyncio
+import hashlib
+import re
+from pathlib import PurePath
 from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
 
@@ -16,6 +20,8 @@ from app.core.preferences import default_provider
 from app.memory import index_memory, retrieve_context
 from app.core.config import get_settings
 from app.runtime import AGENTS, AgentPatch, MemoryIn, RunIn, discover_skills, execute_run, fingerprint, retrieve, load_agents
+
+from app.agent_documents import MAX_BYTES, MAX_DOCUMENTS, document_info, document_prefix, documents, extract_text
 
 router = APIRouter(prefix="/api", tags=["workspace"])
 _run_lock = Lock()
@@ -38,9 +44,63 @@ def configure_agent(agent_id: str, body: AgentPatch, db: Session = Depends(get_d
     if not setting:
         setting = AppSettings(key=key, value="{}")
         db.add(setting)
-    setting.value = body.model_dump_json()
+    values = json.loads(setting.value)
+    values.update(body.model_dump(exclude_unset=True))
+    setting.value = json.dumps(values, ensure_ascii=False)
     db.commit()
     return load_agents(db)[agent_id]
+
+
+@router.get("/agents/{agent_id}/documents")
+def list_agent_documents(agent_id: str, db: Session = Depends(get_db)):
+    if agent_id not in AGENTS:
+        raise HTTPException(404, "Agente non trovato")
+    return [document_info(row) for row in documents(db, agent_id)]
+
+
+@router.post("/agents/{agent_id}/documents", status_code=201)
+async def add_agent_document(agent_id: str, request: Request, name: str = Query(min_length=1, max_length=180),
+                             db: Session = Depends(get_db)):
+    if agent_id not in AGENTS:
+        raise HTTPException(404, "Agente non trovato")
+    name = PurePath(name.replace("\\", "/")).name.strip()
+    if not name or any(not character.isprintable() for character in name):
+        raise HTTPException(422, "Nome file non valido")
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > MAX_BYTES:
+            raise HTTPException(413, "Il file supera 2 MB")
+        content.extend(chunk)
+    try:
+        text = await run_in_threadpool(extract_text, name, bytes(content))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "Impossibile leggere il documento. Controlla che il file sia integro.") from exc
+    doc_id = hashlib.sha256(text.encode()).hexdigest()[:24]
+    key = document_prefix(agent_id) + doc_id
+    if db.get(AppSettings, key):
+        raise HTTPException(409, "Questo testo è già presente nella memoria dell’agente")
+    existing = documents(db, agent_id)
+    if any(document_info(item)["name"].casefold() == name.casefold() for item in existing):
+        raise HTTPException(409, "Nome già presente. Rimuovi il documento precedente oppure rinomina il nuovo file.")
+    if len(existing) >= MAX_DOCUMENTS:
+        raise HTTPException(409, "Limite di 12 documenti per agente raggiunto")
+    row = AppSettings(key=key, value=json.dumps({"name": name, "text": text}, ensure_ascii=False))
+    db.add(row)
+    db.commit()
+    return document_info(row)
+
+
+@router.delete("/agents/{agent_id}/documents/{doc_id}", status_code=204)
+def delete_agent_document(agent_id: str, doc_id: str, db: Session = Depends(get_db)):
+    if agent_id not in AGENTS or not re.fullmatch(r"[0-9a-f]{24}", doc_id):
+        raise HTTPException(404, "Documento non trovato")
+    row = db.get(AppSettings, document_prefix(agent_id) + doc_id)
+    if not row:
+        raise HTTPException(404, "Documento non trovato")
+    db.delete(row)
+    db.commit()
 
 
 @router.get("/skills")

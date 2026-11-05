@@ -1,11 +1,11 @@
 import { PlanEditor, type PlannedTask } from "./PlanEditor";
+import { AgentStudio, type Agent } from "./AgentStudio";
 import { useAccount } from "./AccessGate";
 import { AccountsPanel } from "./AccountsPanel";
 import { useEffect, useState } from "react";
 import { api, workspaceRequest } from "../api/client";
 import { VoiceControls, type VoiceSegment } from "./VoiceControls";
 
-interface Agent { tools?: string[]; id: string; name: string; description: string; skills: string[]; model: string | null; memory_access: string; timeout_seconds: number; voice_profile: string; }
 interface Memory { id: string; content: string; category: string; source: string; certainty: string; }
 interface Run { id: string; prompt: string; status: string; result: string; trace: Record<string, unknown>[]; }
 interface Action { id: string; tool: string; status: string; payload: string; result: string; }
@@ -22,6 +22,8 @@ export function WorkspacePanel({ model, onClose }: Props) {
   const [planned, setPlanned] = useState<PlannedTask[] | null>(null);
   const [plannedPrompt, setPlannedPrompt] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [targetAgent, setTargetAgent] = useState("");
+  const runModel = agents.find((agent) => agent.id === targetAgent)?.model ?? model;
   const [note, setNote] = useState("");
   const [category, setCategory] = useState("project");
   const [busy, setBusy] = useState(false);
@@ -71,10 +73,10 @@ export function WorkspacePanel({ model, onClose }: Props) {
     finally { setBusy(false); }
   }
   async function execute(usePlan = false) {
-    if (!model || !prompt.trim()) return;
+    if (!runModel || !prompt.trim() || (targetAgent && prompt.length > 8000)) return;
     setError(""); setBusy(true);
     try {
-      await workspaceRequest("runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model, ...(usePlan ? { tasks: planned } : {}) }) });
+      await workspaceRequest("runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model: runModel, ...(usePlan ? { tasks: planned } : targetAgent ? { tasks: [{ id: "direct", agent_id: targetAgent, instruction: prompt }] } : {}) }) });
       await reload();
     } catch (e) { setError(e instanceof Error ? e.message : "Attività fallita"); }
     finally { setBusy(false); }
@@ -108,12 +110,6 @@ export function WorkspacePanel({ model, onClose }: Props) {
       const result = await workspaceRequest<{ result: number }>("tools/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool: "calculator", expression }) });
       setCalculation(String(result.result)); setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "Calcolo fallito"); }
-  }
-  async function configure(agent: Agent, value: string, voice = agent.voice_profile) {
-    try {
-      await workspaceRequest(`agents/${agent.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: value.trim() || null, memory_access: agent.memory_access, timeout_seconds: agent.timeout_seconds, voice_profile: voice }) });
-      await reload();
-    } catch (e) { setError(e instanceof Error ? e.message : "Configurazione fallita"); }
   }
   async function findMemory() {
     try { setMemories(await workspaceRequest<Memory[]>(`memory?q=${encodeURIComponent(search)}`)); }
@@ -202,14 +198,22 @@ export function WorkspacePanel({ model, onClose }: Props) {
       <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-xl">Centro di controllo</h1><div className="flex gap-2"><button className={button} onClick={exportData}>Esporta dati</button><button className={button} onClick={onClose}>Torna alla chat</button></div></header>
       {!account?.personal_mode && <AccountsPanel />}
       {error && <p role="alert" className="text-red-300">{error}</p>}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{agents.map((a) => <article key={a.id} className="rounded-xl border border-nathion-border p-4"><h2>{a.name}</h2><p className="text-sm text-nathion-muted">{a.description}</p><p className="mt-2 text-xs">Skills: {a.skills.join(", ") || "nessuna"}</p><label className="mt-3 block text-xs">Modello preferito<input key={a.model ?? "default"} aria-label={`Modello ${a.name}`} defaultValue={a.model ?? ""} placeholder="Usa modello della chat" className="mt-1 w-full rounded bg-nathion-surface p-2" onBlur={(e) => { if (e.target.value.trim() !== (a.model ?? "")) configure(a, e.target.value); }} /></label></article>)}</div>
-      <div className="flex flex-wrap gap-3">{agents.map((a) => <label key={a.id} className="text-xs">Voce · {a.name}<select aria-label={`Voce ${a.name}`} className="ml-2 rounded bg-nathion-panel p-2" value={a.voice_profile} onChange={(e) => configure(a, a.model ?? "", e.target.value)}>{!voiceProfiles.includes(a.voice_profile) && <option value={a.voice_profile}>Non disponibile: {a.voice_profile}</option>}{voiceProfiles.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile}</option>)}</select></label>)}</div>
+      <AgentStudio agents={agents} voices={voiceProfiles} onSaved={(saved) => setAgents((current) =>
+        current.map((agent) => agent.id === saved.id ? saved : agent))} />
       <section className="space-y-3"><h2 className="text-lg">Attività con agenti</h2><p className="text-sm text-nathion-muted">Descrivi il risultato desiderato. Gli specialisti vengono scelti in base alla richiesta; piano e risultati sono visibili nella timeline.</p>
-        <textarea aria-label="Obiettivo attività" className="w-full rounded-xl bg-nathion-panel p-3" value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={12000} />
-        <button className={button} disabled={busy || !model || !prompt.trim()} onClick={() => execute()}>{busy ? "Attività in corso…" : "Avvia attività"}</button>
-        <button className={button} disabled={busy || !model || !prompt.trim()} onClick={previewPlan}>Proponi piano con il modello</button>
+        <label className="block text-sm">A chi assegnare l’attività
+          <select value={targetAgent} onChange={(e) => { setTargetAgent(e.target.value); setPlanned(null); }}
+            className="ml-2 rounded-lg border border-nathion-border bg-nathion-panel p-2">
+            <option value="">Scelta automatica</option>
+            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          </select>
+        </label>
+        <textarea aria-label="Obiettivo attività" className="w-full rounded-xl bg-nathion-panel p-3" value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={targetAgent ? 8000 : 12000} />
+        {targetAgent && prompt.length > 8000 && <p className="text-xs text-amber-200">Riduci l’obiettivo a 8.000 caratteri per assegnarlo a un singolo agente.</p>}
+        <button className={button} disabled={busy || !runModel || !prompt.trim() || Boolean(targetAgent && prompt.length > 8000)} onClick={() => execute()}>{busy ? "Attività in corso…" : "Avvia attività"}</button>
+        <button className={button} disabled={busy || !model || !prompt.trim() || Boolean(targetAgent)} onClick={previewPlan}>Proponi piano con il modello</button>
         {planned && plannedPrompt === prompt && <div className="space-y-2 rounded-xl border border-nathion-border p-3"><p className="text-sm">Piano proposto: controlla agenti, istruzioni, strumenti e dipendenze prima di avviare. Puoi modificarlo.</p><PlanEditor tasks={planned} agents={agents} onChange={setPlanned} /><button className={button} disabled={busy} onClick={() => execute(true)}>Approva piano e avvia</button><button className={button} onClick={() => setPlanned(null)}>Scarta piano</button></div>}
-        {runs.map((run) => <article key={run.id} className="space-y-2 rounded-xl border border-nathion-border p-4"><h3>{run.prompt} · {label(run.status)}</h3><ol className="space-y-1 text-xs text-nathion-muted">{run.trace.map((event, i) => <li key={i}>{label(event.type)} {String(event.agent ?? event.task ?? "")}{event.detail ? `: ${String(event.detail)}` : ""}</li>)}</ol>{run.result && <p className="whitespace-pre-wrap text-sm">{run.result}</p>}<button className={button} disabled={run.status === "running"} onClick={() => eraseRun(run.id)}>Elimina attività</button></article>)}
+        {runs.map((run) => <article key={run.id} className="space-y-2 rounded-xl border border-nathion-border p-4"><h3>{run.prompt} · {label(run.status)}</h3><ol className="space-y-1 text-xs text-nathion-muted">{run.trace.map((event, i) => <li key={i}>{label(event.type)} {String(event.agent ?? event.task ?? "")}{Array.isArray(event.sources) && event.sources.length > 0 && <span> · Fonti consultate {event.sources.map(String).join(", ")}</span>}{event.detail ? `: ${String(event.detail)}` : ""}</li>)}</ol>{run.result && <p className="whitespace-pre-wrap text-sm">{run.result}</p>}<button className={button} disabled={run.status === "running"} onClick={() => eraseRun(run.id)}>Elimina attività</button></article>)}
       </section>
       {runs.filter((run) => run.status === "completed" && contributions(run).length > 0).slice(0, 5).map((run) => <section key={run.id} className="rounded-xl border border-nathion-border p-4"><h2 className="mb-3 text-sm">Ascolta gli agenti · {run.prompt}</h2><VoiceControls disabled={true} onTranscript={() => {}} reply={run.result} segments={contributions(run)} /></section>)}
       <section className="space-y-3"><h2 className="text-lg">Memoria personale</h2><p className="text-sm text-nathion-muted">Solo le informazioni che salvi qui entrano nella memoria degli agenti. La cronologia della chat rimane separata.</p>
