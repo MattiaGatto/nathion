@@ -221,3 +221,20 @@
     transition: none !important;
   }
 }
+
+.voice-console[data-agent] {
+  --hud: #d5b7ff;
+  --hud-glow: rgb(174 103 255 / 42%);
+}
+
+.voice-console[data-agent] .voice-console__display {
+  border-color: rgb(195 151 255 / 44%);
+  background: radial-gradient(ellipse at 50% 25%, #282044, transparent 78%), #10101d;
+}
+
+.voice-console__agent {
+  margin-bottom: .2rem;
+  color: #f0e4ff;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}

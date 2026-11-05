@@ -199,7 +199,12 @@ export function WorkspacePanel({ model, onClose }: Props) {
       {!account?.personal_mode && <AccountsPanel />}
       {error && <p role="alert" className="text-red-300">{error}</p>}
       <AgentStudio agents={agents} voices={voiceProfiles} onSaved={(saved) => setAgents((current) =>
-        current.map((agent) => agent.id === saved.id ? saved : agent))} />
+        current.some((agent) => agent.id === saved.id) ? current.map((agent) => agent.id === saved.id ? saved : agent) : [...current, saved])}
+        onDeleted={(id) => {
+          setAgents((current) => current.filter((agent) => agent.id !== id));
+          if (targetAgent === id) setTargetAgent("");
+          setPlanned((current) => current?.some((task) => task.agent_id === id) ? null : current);
+        }} />
       <section className="space-y-3"><h2 className="text-lg">Attività con agenti</h2><p className="text-sm text-nathion-muted">Descrivi il risultato desiderato. Gli specialisti vengono scelti in base alla richiesta; piano e risultati sono visibili nella timeline.</p>
         <label className="block text-sm">A chi assegnare l’attività
           <select value={targetAgent} onChange={(e) => { setTargetAgent(e.target.value); setPlanned(null); }}
@@ -213,7 +218,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
         <button className={button} disabled={busy || !runModel || !prompt.trim() || Boolean(targetAgent && prompt.length > 8000)} onClick={() => execute()}>{busy ? "Attività in corso…" : "Avvia attività"}</button>
         <button className={button} disabled={busy || !model || !prompt.trim() || Boolean(targetAgent)} onClick={previewPlan}>Proponi piano con il modello</button>
         {planned && plannedPrompt === prompt && <div className="space-y-2 rounded-xl border border-nathion-border p-3"><p className="text-sm">Piano proposto: controlla agenti, istruzioni, strumenti e dipendenze prima di avviare. Puoi modificarlo.</p><PlanEditor tasks={planned} agents={agents} onChange={setPlanned} /><button className={button} disabled={busy} onClick={() => execute(true)}>Approva piano e avvia</button><button className={button} onClick={() => setPlanned(null)}>Scarta piano</button></div>}
-        {runs.map((run) => <article key={run.id} className="space-y-2 rounded-xl border border-nathion-border p-4"><h3>{run.prompt} · {label(run.status)}</h3><ol className="space-y-1 text-xs text-nathion-muted">{run.trace.map((event, i) => <li key={i}>{label(event.type)} {String(event.agent ?? event.task ?? "")}{Array.isArray(event.sources) && event.sources.length > 0 && <span> · Fonti consultate {event.sources.map(String).join(", ")}</span>}{event.detail ? `: ${String(event.detail)}` : ""}</li>)}</ol>{run.result && <p className="whitespace-pre-wrap text-sm">{run.result}</p>}<button className={button} disabled={run.status === "running"} onClick={() => eraseRun(run.id)}>Elimina attività</button></article>)}
+        {runs.map((run) => <article key={run.id} className="space-y-2 rounded-xl border border-nathion-border p-4"><h3>{run.prompt} · {label(run.status)}</h3><ol className="space-y-1 text-xs text-nathion-muted">{run.trace.map((event, i) => <li key={i}>{label(event.type)} {String(event.agent_name ?? agents.find((agent) => agent.id === event.agent)?.name ?? event.agent ?? event.task ?? "")}{Array.isArray(event.sources) && event.sources.length > 0 && <span> · Fonti consultate {event.sources.map(String).join(", ")}</span>}{event.detail ? `: ${String(event.detail)}` : ""}</li>)}</ol>{run.result && <p className="whitespace-pre-wrap text-sm">{run.result}</p>}<button className={button} disabled={run.status === "running"} onClick={() => eraseRun(run.id)}>Elimina attività</button></article>)}
       </section>
       {runs.filter((run) => run.status === "completed" && contributions(run).length > 0).slice(0, 5).map((run) => <section key={run.id} className="rounded-xl border border-nathion-border p-4"><h2 className="mb-3 text-sm">Ascolta gli agenti · {run.prompt}</h2><VoiceControls disabled={true} onTranscript={() => {}} reply={run.result} segments={contributions(run)} /></section>)}
       <section className="space-y-3"><h2 className="text-lg">Memoria personale</h2><p className="text-sm text-nathion-muted">Solo le informazioni che salvi qui entrano nella memoria degli agenti. La cronologia della chat rimane separata.</p>

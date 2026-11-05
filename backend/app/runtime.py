@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 import yaml
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException
 from app.db.models import Memory, Run, AppSettings
 from app.core.identity import preference_key, owner_id, identity
 from app.llm.base import ChatMessage
@@ -28,11 +30,25 @@ class CustomSkill(BaseModel):
     instructions: str = Field(min_length=1, max_length=1400, pattern=r"\S")
 
 
+class AgentIdentity(BaseModel):
+    name: str = Field(min_length=2, max_length=60, pattern=r"\S")
+    description: str = Field(min_length=1, max_length=300, pattern=r"\S")
+
+    @model_validator(mode="after")
+    def clean(self):
+        self.name = self.name.strip()
+        self.description = self.description.strip()
+        if not self.name[0].isalnum() or not self.name[-1].isalnum() or len(self.name) < 2:
+            raise ValueError("Usa un nome che inizi e finisca con una lettera o un numero")
+        return self
+
+
 class Agent(BaseModel):
     id: str
     name: str
     description: str
     instructions: str
+    custom: bool = False
     skills: list[str] = []
     tools: list[str] = []
     model: str | None = None
@@ -54,6 +70,7 @@ AGENTS = {item.id: item for item in [
 
 
 class AgentPatch(BaseModel):
+    identity: AgentIdentity | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
     memory_access: Literal["read", "none"] = "read"
     timeout_seconds: int = Field(default=60, ge=5, le=120)
@@ -69,7 +86,44 @@ def load_agents(db: Session) -> dict[str, Agent]:
         if identity.get() and not identity.get().is_admin and values.get("model") not in identity.get().allowed_models:
             values["model"] = None
         result[key] = Agent.model_validate(values)
+    prefix = preference_key("agent:custom-")
+    for setting in db.query(AppSettings).filter(AppSettings.key.startswith(prefix, autoescape=True),
+                                                ~AppSettings.key.contains(":doc:")).order_by(AppSettings.key):
+        agent_id = "custom-" + setting.key[len(prefix):]
+        values = json.loads(setting.value)
+        if identity.get() and not identity.get().is_admin and values.get("model") not in identity.get().allowed_models:
+            values["model"] = None
+        result[agent_id] = Agent(id=agent_id, custom=True, instructions=(
+            f"Rispondi in italiano. Il tuo ruolo è {values['description']}. Usa le skill dell’agente per svolgere l’attività."
+        ), **values)
     return result
+
+
+def spoken_words(text: str) -> list[str]:
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    return re.findall(r"[^\W_]+", "".join(char for char in folded if not unicodedata.combining(char)))
+
+
+def resolve_voice_agent(agents: dict[str, Agent], command: str) -> tuple[Agent, str]:
+    tokens = [(word, match.end()) for match in re.finditer(r"[^\W_]+", command)
+              for word in spoken_words(match.group())]
+    words = [word for word, _ in tokens]
+    for agent in sorted(agents.values(), key=lambda item: len(spoken_words(item.name)), reverse=True):
+        name = spoken_words(agent.name)
+        if not name or words[:len(name)] != name:
+            continue
+        suffix = command[tokens[len(name) - 1][1]:].strip()
+        # A missing longer name must not silently dispatch to a shorter one.
+        if suffix and suffix[0].isalnum() and not re.match(
+            r"^(?:di|che|chi|cosa|come|quanto|quale|quali|quando|dove|perché)\b", suffix, re.I
+        ):
+            break
+        prompt = suffix.lstrip(" \t\n,.:;?!–—-")
+        prompt = re.sub(r"^di(?:\s+|$)", "", prompt, flags=re.I).strip()
+        if not spoken_words(prompt) or prompt.casefold() == "che":
+            raise HTTPException(422, f"Ho trovato {agent.name}. Dimmi anche cosa vuoi chiedere.")
+        return agent, prompt
+    raise HTTPException(404, "Non ho riconosciuto il nome dell’agente. Usa il nome mostrato nello Studio agenti.")
 
 
 class Skill(BaseModel):
@@ -157,8 +211,8 @@ class RunIn(BaseModel):
         done = set()
         for _ in range(len(tasks)):
             for task in self.tasks:
-                if task.agent_id not in AGENTS or any(dep not in tasks for dep in task.depends_on):
-                    raise ValueError("Agente o dipendenza sconosciuta")
+                if any(dep not in tasks for dep in task.depends_on):
+                    raise ValueError("Dipendenza sconosciuta")
                 if set(task.depends_on) <= done:
                     done.add(task.id)
         if len(done) != len(tasks):
@@ -179,10 +233,13 @@ def plan(prompt: str) -> list[Task]:
     return [Task(id=agent, agent_id=agent, instruction=prompt) for agent in selected]
 
 
-async def execute_run(body: RunIn, db: Session, gateway: LLMGateway) -> Run:
+async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dict[str, Agent] | None = None) -> Run:
     authorize_compute(body.model, body.provider, charge=False)
     tasks = body.tasks or plan(body.prompt)
-    agents = load_agents(db)
+    if agents is None:
+        agents = load_agents(db)
+    if any(task.agent_id not in agents for task in tasks):
+        raise HTTPException(422, "Il piano contiene un agente inesistente o eliminato")
     skills = discover_skills()
     agent_sources = {
         agent_id: [json.loads(document.value) for document in documents(db, agent_id)]
@@ -207,7 +264,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway) -> Run:
             agent = agents[task.agent_id]
             chosen = [skill for skill in skills if skill.id in agent.skills and agent.id in skill.agents]
             sources = relevant_excerpts(agent_sources.get(agent.id, []), task.instruction + " " + body.prompt)
-            event("started", task=task.id, agent=agent.id, skills=[s.id for s in chosen] + [s.name for s in agent.custom_skills],
+            event("started", task=task.id, agent=agent.id, agent_name=agent.name, skills=[s.id for s in chosen] + [s.name for s in agent.custom_skills],
                   sources=[source["source"] for source in sources])
             if task.tool:
                 if task.tool not in agent.tools:

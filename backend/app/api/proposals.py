@@ -10,7 +10,7 @@ from app.db.models import Conversation
 from app.db.session import get_db
 from app.llm.base import ChatMessage, LLMProviderError
 from app.llm.gateway import LLMGateway, get_gateway
-from app.runtime import AGENTS, RunIn, MemoryIn
+from app.runtime import RunIn, MemoryIn, load_agents
 
 router = APIRouter(prefix="/api", tags=["proposals"])
 
@@ -25,9 +25,12 @@ def task_schema(agent):
         }}
 
 
-PLAN_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["tasks"], "properties": {
-    "tasks": {"type": "array", "minItems": 1, "maxItems": 3,
-              "items": {"anyOf": [task_schema(agent) for agent in AGENTS.values()]}}}}
+def plan_schema(agents):
+    return {"type": "object", "additionalProperties": False, "required": ["tasks"], "properties": {
+        "tasks": {"type": "array", "minItems": 1, "maxItems": 3,
+                  "items": {"anyOf": [task_schema(agent) for agent in agents.values()]}}}}
+
+
 MEMORY_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["suggestions"], "properties": {
     "suggestions": {"type": "array", "maxItems": 5, "items": {
         "type": "object", "additionalProperties": False, "required": ["content", "category"], "properties": {
@@ -76,12 +79,14 @@ async def propose(gateway, db, body, instructions, data, schema):
 
 @router.post("/plans")
 async def make_plan(body: PlanIn, db: Session = Depends(get_db), gateway: LLMGateway = Depends(get_gateway)):
-    agents = [{"id": item.id, "description": item.description, "tools": item.tools} for item in AGENTS.values()]
+    agents = load_agents(db)
+    descriptions = [{"id": item.id, "name": item.name, "description": item.description, "tools": item.tools}
+                    for item in agents.values()]
     value = await propose(gateway, db, body,
         'Progetta da 1 a 3 task. Formato {"tasks":[{"id":"step1","agent_id":"general","instruction":"testo breve","depends_on":[],"tool":null}]}. '
         'Usa solo gli agenti e tool forniti. Per calculator instruction deve essere solo espressione numerica; per clock testo breve. '
         'Dipendenze acicliche, ID unici, istruzioni massimo 180 caratteri. Preferisci un task per richieste semplici.',
-        {"request": body.prompt, "agents": agents}, PLAN_SCHEMA)
+        {"request": body.prompt, "agents": descriptions}, plan_schema(agents))
     try:
         if set(value) != {"tasks"} or not isinstance(value["tasks"], list) or not 1 <= len(value["tasks"]) <= 3:
             raise ValueError("Piano vuoto")
@@ -89,7 +94,7 @@ async def make_plan(body: PlanIn, db: Session = Depends(get_db), gateway: LLMGat
         for task in validated.tasks:
             if len(task.instruction) > 180:
                 raise ValueError("Istruzione troppo lunga")
-            if task.tool and task.tool not in AGENTS[task.agent_id].tools:
+            if task.agent_id not in agents or (task.tool and task.tool not in agents[task.agent_id].tools):
                 raise ValueError("Tool non concesso")
     except (ValidationError, ValueError, TypeError) as exc:
         raise HTTPException(422, "Piano rifiutato: agenti, strumenti o dipendenze non validi") from exc

@@ -5,6 +5,7 @@ interface Skill { name: string; instructions: string; }
 interface Source { id: string; name: string; characters: number; preview: string; }
 export interface Agent {
   id: string;
+  custom: boolean;
   name: string;
   description: string;
   skills: string[];
@@ -19,35 +20,88 @@ export interface Agent {
 const input = "mt-1 w-full rounded-lg border border-nathion-border bg-nathion-bg p-2.5 text-sm text-nathion-text";
 const button = "rounded-lg border border-sky-400/30 px-3 py-2 text-sm text-sky-200 hover:bg-sky-400/10 disabled:opacity-40";
 
-export function AgentStudio({ agents, voices, onSaved }: { agents: Agent[]; voices: string[]; onSaved: (agent: Agent) => void }) {
+export function AgentStudio({ agents, voices, onSaved, onDeleted }: {
+  agents: Agent[];
+  voices: string[];
+  onSaved: (agent: Agent) => void;
+  onDeleted: (id: string) => void;
+}) {
   const [selected, setSelected] = useState("");
+  const [creating, setCreating] = useState(false);
   const agent = agents.find((item) => item.id === selected) ?? agents[0];
   return (
     <section className="overflow-hidden rounded-2xl border border-sky-400/25 bg-nathion-panel" aria-labelledby="agent-studio-title">
       <header className="border-b border-sky-400/20 bg-gradient-to-r from-sky-950/70 to-nathion-panel p-5 sm:p-7">
         <p className="font-mono text-[11px] uppercase tracking-[.28em] text-sky-300">Nathion · Configurazione</p>
-        <h2 id="agent-studio-title" className="mt-2 text-2xl font-semibold">Studio agenti</h2>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <h2 id="agent-studio-title" className="text-2xl font-semibold">Studio agenti</h2>
+          <button type="button" className={button} onClick={() => setCreating(true)}>+ Nuovo agente</button>
+        </div>
         <p className="mt-2 max-w-2xl text-sm text-nathion-muted">Scegli uno specialista. Le skill guidano il suo lavoro. I documenti sono fonti consultabili solo da questo agente quando sono pertinenti.</p>
       </header>
-      {agent ? (
+      {creating && <NewAgent onCancel={() => setCreating(false)} onCreated={(created) => {
+        onSaved(created);
+        setSelected(created.id);
+        setCreating(false);
+      }} />}
+      {!creating && (agent ? (
         <div className="grid md:grid-cols-[15rem_minmax(0,1fr)]">
           <nav aria-label="Scegli un agente" className="grid content-start gap-1 border-b border-nathion-border p-3 sm:grid-cols-2 md:grid-cols-1 md:border-b-0 md:border-r">
             {agents.map((item, index) => (
               <button key={item.id} type="button" aria-pressed={item.id === agent.id} onClick={() => setSelected(item.id)}
                 className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 text-left text-sm hover:bg-sky-400/5 aria-pressed:border-sky-400/35 aria-pressed:bg-sky-400/10">
                 <span aria-hidden="true" className="font-mono text-xs text-sky-300">{String(index + 1).padStart(2, "0")}</span>
-                {item.name}
+                <span className="min-w-0 break-words">{item.name}{item.custom && <small className="block text-violet-300">Personale</small>}</span>
               </button>
             ))}
           </nav>
-          <AgentEditor key={agent.id} agent={agent} voices={voices} onSaved={onSaved} />
+          <AgentEditor key={agent.id} agent={agent} voices={voices} onSaved={onSaved} onDeleted={onDeleted} />
         </div>
-      ) : <p className="p-5 text-sm text-nathion-muted">Caricamento degli agenti…</p>}
+      ) : <p className="p-5 text-sm text-nathion-muted">Caricamento degli agenti…</p>)}
     </section>
   );
 }
 
-function AgentEditor({ agent, voices, onSaved }: { agent: Agent; voices: string[]; onSaved: (agent: Agent) => void }) {
+function NewAgent({ onCreated, onCancel }: { onCreated: (agent: Agent) => void; onCancel: () => void }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true); setError("");
+    try {
+      const agent = await workspaceRequest<Agent>("agents", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), description: description.trim() }),
+      });
+      onCreated(agent);
+    } catch (err) { setError(err instanceof Error ? err.message : "Creazione non riuscita."); }
+    finally { setBusy(false); }
+  }
+
+  return <form onSubmit={submit} className="space-y-4 p-5 sm:p-7">
+    <h3 className="text-xl font-semibold text-violet-200">Crea un agente personale</h3>
+    <p className="text-sm text-nathion-muted">Scegli un nome facile da pronunciare. Dopo la creazione puoi aggiungere skill e documenti.</p>
+    <label className="block text-sm">Nome<input className={input} autoFocus required minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="Vega" /></label>
+    <label className="block text-sm">Ruolo<textarea className={input} required maxLength={300} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Assistente per i miei progetti di elettronica" /></label>
+    <div className="flex gap-3">
+      <button className={button} disabled={busy || name.trim().length < 2 || !description.trim()}>Crea agente</button>
+      <button type="button" className={button} disabled={busy} onClick={onCancel}>Annulla</button>
+    </div>
+    {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+  </form>;
+}
+
+function AgentEditor({ agent, voices, onSaved, onDeleted }: {
+  agent: Agent;
+  voices: string[];
+  onSaved: (agent: Agent) => void;
+  onDeleted: (id: string) => void;
+}) {
+  const [name, setName] = useState(agent.name);
+  const [description, setDescription] = useState(agent.description);
   const [model, setModel] = useState(agent.model ?? "");
   const [voice, setVoice] = useState(agent.voice_profile);
   const [memory, setMemory] = useState(agent.memory_access);
@@ -79,6 +133,7 @@ function AgentEditor({ agent, voices, onSaved }: { agent: Agent; voices: string[
       const saved = await workspaceRequest<Agent>(path, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: model.trim() || null, voice_profile: voice, memory_access: memory,
+          ...(agent.custom ? { identity: { name: name.trim(), description: description.trim() } } : {}),
           custom_skills: skills.map(({ name, instructions }) => ({ name: name.trim(), instructions: instructions.trim() })) }),
       });
       onSaved(saved);
@@ -109,6 +164,15 @@ function AgentEditor({ agent, voices, onSaved }: { agent: Agent; voices: string[
     });
   }
 
+  function removeAgent() {
+    if (!window.confirm(`Eliminare «${agent.name}» con tutte le sue skill e i documenti?`)) return;
+    void change(async () => {
+      await workspaceRequest(path, { method: "DELETE" });
+      onDeleted(agent.id);
+      return "Agente eliminato.";
+    });
+  }
+
   function editSkill(index: number, field: keyof Skill, value: string) {
     setSkills((previous) => previous.map((skill, i) => i === index ? { ...skill, [field]: value } : skill));
   }
@@ -120,7 +184,14 @@ function AgentEditor({ agent, voices, onSaved }: { agent: Agent; voices: string[
         <p className="mt-1 text-sm text-nathion-muted">{agent.description}</p>
       </header>
 
+      <p className="rounded-lg border border-violet-400/25 bg-violet-400/10 p-3 text-sm text-violet-200">
+        Di’ «Ehi Nathion, chiedi a {agent.name} di …»
+      </p>
       <form onSubmit={save} className="space-y-5">
+        {agent.custom && <div className="grid gap-3">
+          <label className="text-sm">Nome<input className={input} required minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label className="text-sm">Ruolo<textarea className={input} required rows={2} maxLength={300} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+        </div>}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm">Modello<input className={input} value={model} onChange={(e) => setModel(e.target.value)} maxLength={200} placeholder="Usa il modello della chat" /></label>
           <label className="text-sm">Voce<select className={input} value={voice} onChange={(e) => setVoice(e.target.value)}>
@@ -172,6 +243,7 @@ function AgentEditor({ agent, voices, onSaved }: { agent: Agent; voices: string[
           </div>
         ))}
       </section>
+      {agent.custom && <button type="button" className="text-left text-sm text-red-300" disabled={busy} onClick={removeAgent}>Elimina agente personale</button>}
       {busy && <p role="status" className="text-sm text-sky-200">Operazione in corso…</p>}
       {notice && <p role="status" className="text-sm text-sky-200">{notice}</p>}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}

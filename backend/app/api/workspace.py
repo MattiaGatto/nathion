@@ -7,8 +7,10 @@ import hashlib
 import re
 from pathlib import PurePath
 from threading import Lock
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
@@ -19,7 +21,8 @@ from app.llm.gateway import LLMGateway, get_gateway
 from app.core.preferences import default_provider
 from app.memory import index_memory, retrieve_context
 from app.core.config import get_settings
-from app.runtime import AGENTS, AgentPatch, MemoryIn, RunIn, discover_skills, execute_run, fingerprint, retrieve, load_agents
+from app.runtime import (AgentIdentity, AgentPatch, MemoryIn, RunIn, Task, discover_skills, execute_run,
+                         fingerprint, retrieve, load_agents, resolve_voice_agent, spoken_words)
 
 from app.agent_documents import MAX_BYTES, MAX_DOCUMENTS, document_info, document_prefix, documents, extract_text
 
@@ -32,11 +35,35 @@ def agents(db: Session = Depends(get_db)):
     return list(load_agents(db).values())
 
 
+def unique_agent_name(existing, name: str, exclude: str = ""):
+    words = spoken_words(name)
+    if any(agent.id != exclude and spoken_words(agent.name) == words for agent in existing.values()):
+        raise HTTPException(409, "Esiste già un agente con questo nome")
+
+
+@router.post("/agents", status_code=201)
+async def create_agent(body: AgentIdentity, db: Session = Depends(get_db)):
+    existing = load_agents(db)
+    unique_agent_name(existing, body.name)
+    if sum(agent.custom for agent in existing.values()) >= 12:
+        raise HTTPException(409, "Puoi creare fino a 12 agenti personali")
+    agent_id = f"custom-{uuid4().hex[:20]}"
+    db.add(AppSettings(key=preference_key(f"agent:{agent_id}"), value=body.model_dump_json()))
+    db.commit()
+    return load_agents(db)[agent_id]
+
+
 @router.patch("/agents/{agent_id}")
-def configure_agent(agent_id: str, body: AgentPatch, db: Session = Depends(get_db)):
+async def configure_agent(agent_id: str, body: AgentPatch, db: Session = Depends(get_db)):
     check_model(body.model, "ollama")
-    if agent_id not in AGENTS:
+    existing = load_agents(db)
+    agent = existing.get(agent_id)
+    if not agent:
         raise HTTPException(404, "Agente non trovato")
+    if body.identity:
+        if not agent.custom:
+            raise HTTPException(422, "Nome e ruolo sono modificabili solo per gli agenti personali")
+        unique_agent_name(existing, body.identity.name, exclude=agent_id)
     if body.voice_profile != "default" and body.voice_profile not in get_settings().voice_profiles:
         raise HTTPException(422, "Profilo vocale non configurato")
     key = preference_key(f"agent:{agent_id}")
@@ -45,15 +72,30 @@ def configure_agent(agent_id: str, body: AgentPatch, db: Session = Depends(get_d
         setting = AppSettings(key=key, value="{}")
         db.add(setting)
     values = json.loads(setting.value)
-    values.update(body.model_dump(exclude_unset=True))
+    values.update(body.model_dump(exclude_unset=True, exclude={"identity"}))
+    if body.identity:
+        values.update(body.identity.model_dump())
     setting.value = json.dumps(values, ensure_ascii=False)
     db.commit()
     return load_agents(db)[agent_id]
 
 
+@router.delete("/agents/{agent_id}", status_code=204)
+async def delete_agent(agent_id: str, db: Session = Depends(get_db)):
+    agent = load_agents(db).get(agent_id)
+    if not agent:
+        raise HTTPException(404, "Agente non trovato")
+    if not agent.custom:
+        raise HTTPException(422, "Gli agenti integrati non si possono eliminare")
+    for document in documents(db, agent_id):
+        db.delete(document)
+    db.delete(db.get(AppSettings, preference_key(f"agent:{agent_id}")))
+    db.commit()
+
+
 @router.get("/agents/{agent_id}/documents")
 def list_agent_documents(agent_id: str, db: Session = Depends(get_db)):
-    if agent_id not in AGENTS:
+    if agent_id not in load_agents(db):
         raise HTTPException(404, "Agente non trovato")
     return [document_info(row) for row in documents(db, agent_id)]
 
@@ -61,7 +103,7 @@ def list_agent_documents(agent_id: str, db: Session = Depends(get_db)):
 @router.post("/agents/{agent_id}/documents", status_code=201)
 async def add_agent_document(agent_id: str, request: Request, name: str = Query(min_length=1, max_length=180),
                              db: Session = Depends(get_db)):
-    if agent_id not in AGENTS:
+    if agent_id not in load_agents(db):
         raise HTTPException(404, "Agente non trovato")
     name = PurePath(name.replace("\\", "/")).name.strip()
     if not name or any(not character.isprintable() for character in name):
@@ -77,6 +119,9 @@ async def add_agent_document(agent_id: str, request: Request, name: str = Query(
         raise HTTPException(422, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(422, "Impossibile leggere il documento. Controlla che il file sia integro.") from exc
+    # The agent may have been removed while the document was being parsed.
+    if agent_id not in load_agents(db):
+        raise HTTPException(404, "Agente non trovato")
     doc_id = hashlib.sha256(text.encode()).hexdigest()[:24]
     key = document_prefix(agent_id) + doc_id
     if db.get(AppSettings, key):
@@ -94,7 +139,7 @@ async def add_agent_document(agent_id: str, request: Request, name: str = Query(
 
 @router.delete("/agents/{agent_id}/documents/{doc_id}", status_code=204)
 def delete_agent_document(agent_id: str, doc_id: str, db: Session = Depends(get_db)):
-    if agent_id not in AGENTS or not re.fullmatch(r"[0-9a-f]{24}", doc_id):
+    if agent_id not in load_agents(db) or not re.fullmatch(r"[0-9a-f]{24}", doc_id):
         raise HTTPException(404, "Documento non trovato")
     row = db.get(AppSettings, document_prefix(agent_id) + doc_id)
     if not row:
@@ -231,12 +276,35 @@ def export_data(db: Session = Depends(get_db)):
                             if row.key in {prefix + "default_model", prefix + "default_provider", prefix + "personal_profile"} or row.key.startswith(prefix + "agent:")]}
 
 
-@router.post("/runs")
-async def start_run(body: RunIn, db: Session = Depends(get_db), gateway: LLMGateway = Depends(get_gateway)):
+async def run_workflow(body, db, gateway, agents=None):
     if not _run_lock.acquire(blocking=False):
         raise HTTPException(429, "Un workflow è già in esecuzione")
     try:
         body.provider = body.provider or default_provider(db)
-        return run_out(await execute_run(body, db, gateway))
+        return run_out(await execute_run(body, db, gateway, agents))
     finally:
         _run_lock.release()
+
+
+@router.post("/runs")
+async def start_run(body: RunIn, db: Session = Depends(get_db), gateway: LLMGateway = Depends(get_gateway)):
+    return await run_workflow(body, db, gateway)
+
+
+class VoiceRunIn(BaseModel):
+    command: str = Field(min_length=1, max_length=8100)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+@router.post("/runs/voice")
+async def voice_run(body: VoiceRunIn, db: Session = Depends(get_db), gateway: LLMGateway = Depends(get_gateway)):
+    agents = load_agents(db)
+    agent, prompt = resolve_voice_agent(agents, body.command)
+    model = agent.model or body.model
+    if not model:
+        raise HTTPException(422, "Scegli un modello per l’agente o per la chat")
+    if len(prompt) > 8000:
+        raise HTTPException(422, "La richiesta supera 8.000 caratteri")
+    task = Task(id="direct", agent_id=agent.id, instruction=prompt)
+    run = await run_workflow(RunIn(prompt=prompt, model=model, tasks=[task]), db, gateway, agents)
+    return {**run, "agent_name": agent.name, "voice_profile": agent.voice_profile}

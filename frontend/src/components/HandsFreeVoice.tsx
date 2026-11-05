@@ -16,6 +16,8 @@ export function HandsFreeVoice(props: Props) {
   const [pcAction, setPcAction] = useState<{ id: string; label: string } | null>(null);
   const [pcBusy, setPcBusy] = useState(false);
   const [actionResult, setActionResult] = useState("");
+  const [agentTurn, setAgentTurn] = useState<{ name: string; pending: boolean } | null>(null);
+  const agentVoice = useRef<{ name: string; profile: string } | null>(null);
   const pendingPC = useRef(false);
   const latest = useRef(props); latest.current = props;
   const [active, setActive] = useState(false);
@@ -64,7 +66,7 @@ export function HandsFreeVoice(props: Props) {
     if (audio.current) { audio.current.onended = null; audio.current.onerror = null; audio.current.pause(); }
     audio.current = null;
     if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
-    audioUrl.current = ""; queue.current = []; playing.current = false;
+    audioUrl.current = ""; queue.current = []; playing.current = false; agentVoice.current = null;
   }
   function stop() {
     clearTimeout(idleTimeout.current);
@@ -73,6 +75,7 @@ export function HandsFreeVoice(props: Props) {
     const current = resources.current; resources.current = null;
     if (current) { current.capture.port.onmessage = null; current.capture.disconnect(); current.input.getTracks().forEach((track) => track.stop()); void current.context.close().catch(() => {}); }
     releaseAudio(owner.current); setActive(false); setStatus("");
+    setAgentTurn((turn) => turn?.pending ? null : turn);
   }
   function fail(value: unknown) { stop(); setError(value instanceof Error ? value.message : "Sessione vocale interrotta"); }
   useEffect(() => {
@@ -97,7 +100,7 @@ export function HandsFreeVoice(props: Props) {
     try {
       setStatus("Preparazione voce…");
       const abort = new AbortController(); controller.current = abort;
-      const blob = await api.speak(queue.current.shift()!, abort.signal, selectedVoice.current);
+      const blob = await api.speak(queue.current.shift()!, abort.signal, agentVoice.current?.profile ?? selectedVoice.current);
       if (!running.current || current !== playbackGeneration.current) return;
       audioUrl.current = URL.createObjectURL(blob);
       const player = new Audio(audioUrl.current); audio.current = player;
@@ -109,7 +112,7 @@ export function HandsFreeVoice(props: Props) {
       };
       player.onerror = () => fail(new Error("Riproduzione vocale non riuscita"));
       await player.play();
-      if (current === playbackGeneration.current) setStatus("NATHION parla · microfono attivo");
+      if (current === playbackGeneration.current) setStatus(`${agentVoice.current?.name ?? "NATHION"} parla · microfono attivo`);
     } catch (e) { if (running.current && current === playbackGeneration.current) fail(e); }
   }
 
@@ -154,7 +157,7 @@ export function HandsFreeVoice(props: Props) {
   }
 
   async function start() {
-    stop(); waitingForWake.current = wakeEnabled; transcriptReceived.current = false; setMicrophoneLevel(0); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
+    stop(); setAgentTurn(null); setActionResult(""); waitingForWake.current = wakeEnabled; transcriptReceived.current = false; setMicrophoneLevel(0); setError(""); setTranscript(""); setStatus("Accesso al microfono…");
     claimAudio(owner.current, stop); running.current = true; setActive(true);
     const current = generation.current;
     let input: MediaStream | null = null;
@@ -223,6 +226,9 @@ export function HandsFreeVoice(props: Props) {
               }
             }
             setTranscript(text);
+            setAgentTurn(null);
+            agentVoice.current = null;
+            setActionResult("");
             const phone = (window as Window & { NathionPhone?: { openSettings: () => void } }).NathionPhone;
             if (phone && /^apri (?:le )?impostazioni (?:del telefono|di android)[.!]?$/i.test(text)) {
               phone.openSettings();
@@ -231,31 +237,45 @@ export function HandsFreeVoice(props: Props) {
               return;
             }
             const delegation = /^(?:chiedi agli agenti|fai lavorare gli agenti)[\s,:]+(.+)$/iu.exec(text);
-            if (delegation && latest.current.model) {
-              setActionResult("");
-              setStatus("Gli agenti stanno elaborando la richiesta…");
-              return workspaceRequest<{ status: string; result: string }>("runs", {
-                method: "POST",
-                signal: abort.signal,
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt: delegation[1], model: latest.current.model }),
-              }).then((run) => {
-                if (!running.current || current !== generation.current) return;
-                if (run.status !== "completed") {
-                  setActionResult("Attività interrotta. Apri Agenti per vedere l’esito.");
+            const namedAgent = /^chiedi\s+(?:a|ad)(?:[\s,:]+(.*))?$/iu.exec(text);
+            if (namedAgent || delegation) {
+              const model = latest.current.model;
+              setAgentTurn({ name: "", pending: true });
+              setStatus(namedAgent ? "Instrado la richiesta allo specialista…" : "Gli agenti stanno elaborando la richiesta…");
+              const request = namedAgent ? { command: namedAgent[1]?.trim() ?? "", model } : { prompt: delegation?.[1], model };
+              const runAgent = async () => {
+                try {
+                  if (namedAgent && !namedAgent[1]?.trim()) throw new Error("Dimmi a quale agente vuoi chiedere.");
+                  if (!namedAgent && !model) throw new Error("Scegli un modello per la chat.");
+                  const run = await workspaceRequest<{ status: string; result: string; agent_name?: string; voice_profile?: string }>(
+                    namedAgent ? "runs/voice" : "runs", {
+                      method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(request),
+                    },
+                  );
+                  if (!running.current || current !== generation.current) return;
+                  setAgentTurn({ name: run.agent_name ?? "", pending: false });
+                  if (run.status !== "completed") throw new Error("Attività interrotta. Apri Agenti per vedere l’esito.");
+                  if (run.agent_name && run.voice_profile) agentVoice.current = { name: run.agent_name, profile: run.voice_profile };
+                  setActionResult(run.result);
+                  transcriptReceived.current = true;
+                  let remaining = run.result;
+                  for (let count = 0; count < 20; count++) {
+                    const part = nextPhrase(remaining, true);
+                    if (!part) break;
+                    queue.current.push(part.phrase);
+                    remaining = remaining.slice(part.consumed);
+                  }
+                  void playQueue();
+                } catch (err) {
+                  if (!running.current || current !== generation.current) return;
+                  setAgentTurn((turn) => turn ? { ...turn, pending: false } : null);
+                  setActionResult(err instanceof Error ? err.message : "Richiesta all’agente non riuscita.");
+                  setStatus("Ti ascolto…");
                   resetIdle();
-                  return;
                 }
-                setActionResult(run.result);
-                let remaining = run.result;
-                for (let count = 0; count < 20; count++) {
-                  const part = nextPhrase(remaining, true);
-                  if (!part) break;
-                  queue.current.push(part.phrase);
-                  remaining = remaining.slice(part.consumed);
-                }
-                void playQueue();
-              });
+              };
+              return runAgent();
             }
             const command = canControlPC && pcCommands.find((item) => item.pattern.test(text));
             if (command) {
@@ -313,7 +333,7 @@ export function HandsFreeVoice(props: Props) {
 
   const phase = !active ? "idle"
     : audio.current && !audio.current.paused ? "speaking"
-    : playing.current || (props.response && !props.response.done) || status === "Trascrizione locale…" ? "processing"
+    : agentTurn?.pending || playing.current || (props.response && !props.response.done) || status === "Trascrizione locale…" ? "processing"
     : "listening";
   const signal = phase === "listening" ? Math.min(1, microphoneLevel / 0.14) : 0;
   const phaseLabel = {
@@ -325,7 +345,7 @@ export function HandsFreeVoice(props: Props) {
 
   return (
     <section className={`voice-console ${props.hero ? "voice-console--hero" : "voice-console--compact"}`}
-      data-phase={phase} style={{ "--voice-signal": signal } as CSSProperties} aria-label="Conversazione vocale">
+      data-phase={phase} data-agent={agentTurn ? "" : undefined} style={{ "--voice-signal": signal } as CSSProperties} aria-label="Conversazione vocale">
       <div className="voice-console__display">
         <button
           className="voice-orb"
@@ -357,6 +377,9 @@ export function HandsFreeVoice(props: Props) {
               <span key={index} style={{ "--bar-height": height, "--bar-delay": `${index * -55}ms` } as CSSProperties} />
             ))}
           </div>
+          {agentTurn && <p className="voice-console__agent">
+            {agentTurn.name ? `Agente · ${agentTurn.name}` : "Modalità agenti"}
+          </p>}
           <p className="voice-console__phase">{phaseLabel}</p>
           <p className="voice-console__status" role="status">{status || "Attiva ascolto"}</p>
         </div>
@@ -391,7 +414,12 @@ export function HandsFreeVoice(props: Props) {
           <button disabled={pcBusy} onClick={() => void decidePC(false)}>Annulla azione</button>
         </div>
       </div>}
-      {actionResult && <p role="status" className="max-h-36 overflow-auto whitespace-pre-wrap">{actionResult}</p>}
+      {actionResult && <div role="status" className={agentTurn
+        ? "max-h-48 overflow-auto rounded-lg border border-violet-400/25 bg-violet-400/10 p-3 text-sm"
+        : "max-h-36 overflow-auto"}>
+        {agentTurn?.name && <p className="mb-1 font-semibold text-violet-200">{agentTurn.name}</p>}
+        <p className="whitespace-pre-wrap">{actionResult}</p>
+      </div>}
       {error && <p role="alert" className="text-red-300">{error}</p>}
     </section>
   );
