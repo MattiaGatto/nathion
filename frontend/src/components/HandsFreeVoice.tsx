@@ -39,7 +39,7 @@ export function HandsFreeVoice(props: Props) {
   const owner = useRef(Symbol("conversation"));
   const running = useRef(false);
   const generation = useRef(0);
-  const resources = useRef<{ input: MediaStream; context: AudioContext; capture: AudioWorkletNode } | null>(null);
+  const releaseCapture = useRef<(() => void) | null>(null);
   const controller = useRef<AbortController | null>(null);
   const outputContext = useRef<AudioContext | null>(null);
   const audio = useRef<AudioBufferSourceNode | null>(null);
@@ -76,8 +76,7 @@ export function HandsFreeVoice(props: Props) {
     clearTimeout(idleTimeout.current);
     running.current = false; generation.current++; expected.current = false; cursor.current = 0;
     stopPlayback();
-    const current = resources.current; resources.current = null;
-    if (current) { current.capture.port.onmessage = null; current.capture.disconnect(); current.input.getTracks().forEach((track) => track.stop()); }
+    releaseCapture.current?.(); releaseCapture.current = null;
     const context = outputContext.current; outputContext.current = null;
     if (context) void context.close().catch(() => {});
     releaseAudio(owner.current); setActive(false); setStatus("");
@@ -173,11 +172,15 @@ export function HandsFreeVoice(props: Props) {
     claimAudio(owner.current, stop); running.current = true; setActive(true);
     const current = generation.current;
     let input: MediaStream | null = null;
-    let context: AudioContext | null = null;
+    const phone = (window as Window & { NathionPhone?: {
+      startMicrophone?: (session: number) => void;
+      stopMicrophone?: (session: number) => void;
+    } }).NathionPhone;
+    const native = Boolean(phone?.startMicrophone && phone.stopMicrophone);
     try {
-      if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) throw new Error("Usa un browser aggiornato su HTTPS o localhost.");
+      if (!native && (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode)) throw new Error("Usa un browser aggiornato su HTTPS o localhost.");
       // Unlock output during the click, before permission and network awaits.
-      context = new AudioContext();
+      const context = new AudioContext();
       outputContext.current = context;
       await context.resume();
       if (!running.current || current !== generation.current) return;
@@ -185,23 +188,13 @@ export function HandsFreeVoice(props: Props) {
       if (!availability.enabled || !availability.whisper_model_present || !availability.piper_model_present) throw new Error("Motore vocale non pronto. Controlla i modelli locali.");
       if (!running.current || current !== generation.current) return;
       setProfiles(availability.profiles);
-      input = await openMicrophone(true, () => running.current && current === generation.current);
-      if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
-      await context.audioWorklet.addModule("/voice-capture.js");
-      if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
-      const source = context.createMediaStreamSource(input);
-      const capture = new AudioWorkletNode(context, "nathion-capture");
-      // Worklet output is silent; connecting it keeps capture processing live.
-      source.connect(capture); capture.connect(context.destination);
-      resources.current = { input, context, capture };
       const detector = new TurnDetector();
       let preRoll: Float32Array[] = [], frames: Float32Array[] = [];
       let processing = false;
       let lastLevelUpdate = 0;
-      const rate = context.sampleRate;
-      capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
+      const rate = native ? 16000 : context.sampleRate;
+      const onFrame = (frame: Float32Array) => {
         if (!running.current || current !== generation.current || processing) return;
-        const frame = event.data;
         const milliseconds = frame.length * 1000 / rate;
         const speakingBack = playing.current || Boolean(latest.current.response && !latest.current.response.done);
         if (speakingBack && !interruptible.current) { detector.reset(); frames = []; preRoll = []; return; }
@@ -331,11 +324,53 @@ export function HandsFreeVoice(props: Props) {
             .finally(() => { processing = false; detector.reset(); });
         }
       };
-      input.getTracks().forEach((track) => { track.onended = () => { if (running.current) fail(new Error("Il dispositivo ha interrotto il microfono")); }; });
-      resetIdle();
-      setStatus(waitingForWake.current ? "In attesa di «Ehi Nathion»…" : "Ti ascolto…");
+      const ready = () => {
+        resetIdle();
+        setStatus(waitingForWake.current ? "In attesa di «Ehi Nathion»…" : "Ti ascolto…");
+      };
+      if (native) {
+        const session = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x3fffffff) + 1;
+        const receive = (event: Event) => {
+          const detail = (event as CustomEvent<{ session: number; type: string; pcm?: string; message?: string }>).detail;
+          if (!detail || detail.session !== session || !running.current || current !== generation.current) return;
+          if (detail.type === "ready") ready();
+          else if (detail.type === "error") fail(new Error(detail.message || "Il microfono Android si è interrotto."));
+          else if (detail.pcm && !processing) {
+            const bytes = atob(detail.pcm);
+            const frame = new Float32Array(bytes.length / 2);
+            for (let i = 0; i < frame.length; i++) {
+              const pcm = bytes.charCodeAt(i * 2) | (bytes.charCodeAt(i * 2 + 1) << 8);
+              frame[i] = (pcm << 16 >> 16) / 32768;
+            }
+            onFrame(frame);
+          }
+        };
+        window.addEventListener("nathion-native-audio", receive);
+        releaseCapture.current = () => {
+          window.removeEventListener("nathion-native-audio", receive);
+          phone?.stopMicrophone?.(session);
+        };
+        phone?.startMicrophone?.(session);
+      } else {
+        input = await openMicrophone(true, () => running.current && current === generation.current);
+        if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
+        await context.audioWorklet.addModule("/voice-capture.js");
+        if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
+        const source = context.createMediaStreamSource(input);
+        const capture = new AudioWorkletNode(context, "nathion-capture");
+        source.connect(capture); capture.connect(context.destination);
+        capture.port.onmessage = (event: MessageEvent<Float32Array>) => onFrame(event.data);
+        const tracks = input.getTracks();
+        releaseCapture.current = () => {
+          capture.port.onmessage = null;
+          capture.disconnect();
+          tracks.forEach((track) => { track.onended = null; track.stop(); });
+        };
+        tracks.forEach((track) => { track.onended = () => { if (running.current) fail(new Error("Il dispositivo ha interrotto il microfono")); }; });
+        ready();
+      }
     } catch (e) {
-      if (resources.current?.context !== context) input?.getTracks().forEach((track) => track.stop());
+      input?.getTracks().forEach((track) => track.stop());
       if (current === generation.current) fail(e);
     }
   }

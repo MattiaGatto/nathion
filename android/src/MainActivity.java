@@ -10,6 +10,10 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+import android.util.Base64;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.provider.DocumentsContract;
@@ -32,11 +36,19 @@ import android.widget.Toast;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.net.URI;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.json.JSONObject;
 
 public class MainActivity extends Activity {
     private static final int MICROPHONE = 10;
     private static final int PICK_FILE = 11;
     private static final int SAVE_LOG = 12;
+    private static final int NATIVE_MICROPHONE = 13;
+    private static final int SAMPLE_RATE = 16000;
+    private final ExecutorService microphoneWorker = Executors.newSingleThreadExecutor();
+    private volatile int recordingSession;
+    private int pendingNativeSession;
     private static final String TAILSCALE_PACKAGE = "com.tailscale.ipn";
     private static final int SURFACE = 0xff111c2d;
     private static final int CYAN = 0xffa3eaff;
@@ -50,6 +62,7 @@ public class MainActivity extends Activity {
     private URI server;
     private boolean reloadAfterTailscale;
     private boolean resumed;
+    private boolean pausedRecording;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -253,6 +266,8 @@ public class MainActivity extends Activity {
                 }
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                recordingSession = 0;
+                pendingNativeSession = 0;
                 connection.setText("Connessione privata al PC…");
                 connection.setVisibility(android.view.View.VISIBLE);
             }
@@ -314,7 +329,94 @@ public class MainActivity extends Activity {
         return web != null && web.getUrl() != null && sameOrigin(Uri.parse(web.getUrl()));
     }
 
+    private void microphoneEvent(int session, String type, String pcm, String message) {
+        if (recordingSession != session || !resumed || !trustedPage()) return;
+        web.evaluateJavascript("window.dispatchEvent(new CustomEvent('nathion-native-audio',{detail:{session:"
+            + session + ",type:" + JSONObject.quote(type) + ",pcm:" + JSONObject.quote(pcm)
+            + ",message:" + JSONObject.quote(message) + "}}))", null);
+    }
+
+    private void startPendingRecording() {
+        if (!resumed || pendingNativeSession == 0 || !trustedPage()) return;
+        int session = pendingNativeSession;
+        pendingNativeSession = 0;
+        recordingSession = session;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            microphoneEvent(session, "error", "", "Consenti il microfono nelle impostazioni di NATHION.");
+            recordingSession = 0;
+            return;
+        }
+        microphoneWorker.execute(() -> recordMicrophone(session));
+    }
+
+    private AudioRecord openRecorder(int source) {
+        int minimum = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        if (minimum <= 0) throw new IllegalStateException("Audio format unavailable");
+        AudioRecord recorder = new AudioRecord(source, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT, Math.max(minimum, 4096));
+        try {
+            if (recorder.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("Audio source unavailable");
+            recorder.startRecording();
+            if (recorder.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) throw new IllegalStateException("Audio source stopped");
+            return recorder;
+        } catch (RuntimeException e) {
+            recorder.release();
+            throw e;
+        }
+    }
+
+    private void recordMicrophone(int session) {
+        if (recordingSession != session) return;
+        AudioRecord recorder = null;
+        try {
+            try {
+                recorder = openRecorder(MediaRecorder.AudioSource.VOICE_RECOGNITION);
+            } catch (RuntimeException e) {
+                recorder = openRecorder(MediaRecorder.AudioSource.MIC);
+            }
+            runOnUiThread(() -> microphoneEvent(session, "ready", "", ""));
+            // 64 ms of little-endian PCM per message, without files or storage.
+            byte[] pcm = new byte[2048];
+            while (recordingSession == session) {
+                int count = recorder.read(pcm, 0, pcm.length, AudioRecord.READ_BLOCKING);
+                if (count < 0) throw new IllegalStateException("Audio read failed");
+                if (count == 0) continue;
+                String encoded = Base64.encodeToString(pcm, 0, count, Base64.NO_WRAP);
+                runOnUiThread(() -> microphoneEvent(session, "frame", encoded, ""));
+            }
+        } catch (RuntimeException e) {
+            runOnUiThread(() -> {
+                microphoneEvent(session, "error", "", "Android non riesce ad aprire il microfono. Controlla il permesso di NATHION e l’accesso al microfono nelle impostazioni rapide.");
+                if (recordingSession == session) recordingSession = 0;
+            });
+        } finally {
+            if (recorder != null) {
+                try { recorder.stop(); } catch (IllegalStateException ignored) {}
+                recorder.release();
+            }
+        }
+    }
+
     public final class PhoneActions {
+        @JavascriptInterface public void startMicrophone(int session) {
+            runOnUiThread(() -> {
+                if (session <= 0 || !trustedPage() || !resumed) return;
+                pendingNativeSession = session;
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    startPendingRecording();
+                } else {
+                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, NATIVE_MICROPHONE);
+                }
+            });
+        }
+
+        @JavascriptInterface public void stopMicrophone(int session) {
+            runOnUiThread(() -> {
+                if (pendingNativeSession == session) pendingNativeSession = 0;
+                if (recordingSession == session) recordingSession = 0;
+            });
+        }
+
         @JavascriptInterface public void saveActivityLog(String json) {
             if (json == null || json.length() > MAX_EXPORT) return;
             byte[] data = json.getBytes(StandardCharsets.UTF_8);
@@ -375,6 +477,10 @@ public class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
+        if (code == NATIVE_MICROPHONE) {
+            startPendingRecording();
+            return;
+        }
         if (code != MICROPHONE || pendingMicrophone == null) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
             grantPendingMicrophone();
@@ -394,6 +500,8 @@ public class MainActivity extends Activity {
     }
 
     private void closeWeb() {
+        recordingSession = 0;
+        pendingNativeSession = 0;
         if (pendingFile != null) { pendingFile.onReceiveValue(null); pendingFile = null; }
         pendingExport = null;
         if (pendingMicrophone != null) { pendingMicrophone.deny(); pendingMicrophone = null; }
@@ -407,6 +515,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onPause() {
         resumed = false;
+        pausedRecording = recordingSession != 0;
+        recordingSession = 0;
         if (web != null) web.onPause();
         super.onPause();
     }
@@ -419,14 +529,18 @@ public class MainActivity extends Activity {
         super.onResume();
         if (web != null) {
             web.onResume();
+            if (pausedRecording) web.evaluateJavascript("window.dispatchEvent(new Event('nathion-background'))", null);
             if (reloadAfterTailscale) web.loadUrl(origin(server));
         }
         reloadAfterTailscale = false;
+        pausedRecording = false;
         resumed = true;
         grantPendingMicrophone();
+        startPendingRecording();
     }
     @Override protected void onDestroy() {
         closeWeb();
+        microphoneWorker.shutdown();
         super.onDestroy();
     }
 }
