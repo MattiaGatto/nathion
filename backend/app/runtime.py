@@ -311,7 +311,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dic
                 result = str(calculate(task.instruction)) if task.tool == "calculator" else datetime.now(timezone.utc).isoformat()
                 outputs[task.id] = result
                 event("tool", task=task.id, agent=agent.id, tool=task.tool, result=result)
-                event("completed", task=task.id, agent=agent.id, result=result)
+                event("completed", task=task.id, agent=agent.id, agent_name=agent.name, voice_profile=agent.voice_profile, result=result)
                 return
             instructions = agent.instructions + "\n" + "\n".join(s.instructions for s in chosen) + "\nAdatta il dettaglio alla richiesta e conserva completo l'eventuale codice."
             if agent.custom_skills:
@@ -333,7 +333,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dic
             if not result.strip():
                 raise ValueError("Risposta agente vuota")
             outputs[task.id] = result
-            event("completed", task=task.id, agent=agent.id, result=outputs[task.id])
+            event("completed", task=task.id, agent=agent.id, agent_name=agent.name, voice_profile=agent.voice_profile, result=outputs[task.id])
 
     try:
         async with asyncio.timeout(180):

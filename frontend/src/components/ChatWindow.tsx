@@ -128,7 +128,9 @@ export function ChatWindow({
         )}
       </div>
 
-      <div className={voiceFocus || showHero
+      <div className={voiceFocus
+        ? "voice-stage fixed inset-0 z-[60] flex flex-col items-center overflow-y-auto px-3 py-4 text-center sm:px-6"
+        : showHero
         ? "flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 py-4 text-center sm:px-6"
         : "mx-auto w-full max-w-3xl shrink-0 px-3 sm:px-6"}>
         {voiceFocus && <div className="mb-4 flex w-full max-w-xl items-center justify-between gap-2 text-left">
@@ -141,7 +143,7 @@ export function ChatWindow({
           <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-5xl">Di cosa parliamo?</h2>
           <p className="mt-3 text-sm text-nathion-muted">Attiva l’ascolto, poi di’ «Ehi Nathion» e fai la tua domanda.</p>
         </div>}
-        <div className="w-full max-w-xl">
+        <div className={voiceFocus ? "w-full max-w-4xl" : "w-full max-w-xl"}>
           <HandsFreeVoice agentRevision={agentRevision} showOrbit={showHero && !voiceFocus} hero={voiceFocus || showHero} focused={voiceFocus} onFocus={() => setVoiceFocus(true)} model={model} connected={status === "open"} response={streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
         </div>
         {showHero && !voiceFocus && <div className="mb-auto" />}

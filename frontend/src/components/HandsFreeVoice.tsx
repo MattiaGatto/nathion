@@ -5,6 +5,10 @@ import { claimAudio, openMicrophone, releaseAudio } from "../audioOwner";
 import { TurnDetector, wavAudio, nextPhrase } from "../voiceSession";
 
 interface VoiceAgent { id: string; name: string; voice_profile: string; }
+interface Speaker { id: string; name: string; profile: string; }
+interface SpokenLine { text: string; speaker?: Speaker; }
+interface AgentRun { status: string; result: string; agent_name?: string; voice_profile?: string;
+  trace?: { type: string; agent?: string; agent_name?: string; voice_profile?: string; result?: string }[]; }
 interface OrbitAgent extends VoiceAgent { job_role?: string | null; custom: boolean; }
 interface VoiceTurn { request: string; answer: string; }
 
@@ -22,20 +26,21 @@ export function HandsFreeVoice(props: Props) {
   const [actionResult, setActionResult] = useState("");
   const [orbitAgents, setOrbitAgents] = useState<OrbitAgent[]>([]);
   const [orbitPage, setOrbitPage] = useState(0);
+  const orbitVisible = props.showOrbit || props.focused;
   useEffect(() => {
-    if (!props.showOrbit) return;
+    if (!orbitVisible) return;
     const controller = new AbortController();
     workspaceRequest<OrbitAgent[]>("agents", { signal: controller.signal }).then((list) => {
       setOrbitAgents(list);
       setOrbitPage((page) => Math.min(page, Math.max(0, Math.ceil(list.length / 8) - 1)));
     }).catch(() => {});
     return () => controller.abort();
-  }, [props.agentRevision, props.showOrbit]);
+  }, [props.agentRevision, orbitVisible]);
   const [agentTurn, setAgentTurn] = useState<{ name: string; pending: boolean } | null>(null);
   const activeAgent = useRef<VoiceAgent | null>(null);
   const agentHistory = useRef<VoiceTurn[]>([]);
   const agentPending = useRef(false);
-  const agentVoice = useRef<{ name: string; profile: string } | null>(null);
+  const [speaker, setSpeaker] = useState<Speaker | null>(null);
   const pendingPC = useRef(false);
   const latest = useRef(props); latest.current = props;
   const [active, setActive] = useState(false);
@@ -62,7 +67,7 @@ export function HandsFreeVoice(props: Props) {
   const playbackController = useRef<AbortController | null>(null);
   const outputContext = useRef<AudioContext | null>(null);
   const audio = useRef<AudioBufferSourceNode | null>(null);
-  const queue = useRef<string[]>([]);
+  const queue = useRef<SpokenLine[]>([]);
   const playing = useRef(false);
   const expected = useRef(false);
   const cursor = useRef(0);
@@ -90,7 +95,7 @@ export function HandsFreeVoice(props: Props) {
       audio.current.disconnect();
       audio.current = null;
     }
-    queue.current = []; playing.current = false; agentVoice.current = null;
+    queue.current = []; playing.current = false; setSpeaker(null);
   }
   function stop() {
     clearTimeout(idleTimeout.current);
@@ -121,9 +126,18 @@ export function HandsFreeVoice(props: Props) {
     setActionResult("");
     setStatus("Sono Nathion, ti ascolto…");
     if (speak && running.current) {
-      queue.current.push("Va bene, sono di nuovo Nathion.");
+      queue.current.push({ text: "Va bene, sono di nuovo Nathion." });
       void playQueue();
     } else if (running.current) resetIdle();
+  }
+
+  function enqueueSpeech(text: string, speaker?: Speaker, limit = 20) {
+    for (let count = 0; count < limit; count++) {
+      const part = nextPhrase(text, true);
+      if (!part) break;
+      queue.current.push({ text: part.phrase, speaker });
+      text = text.slice(part.consumed);
+    }
   }
 
   async function playQueue() {
@@ -142,8 +156,9 @@ export function HandsFreeVoice(props: Props) {
     try {
       setStatus("Preparazione voce…");
       const abort = new AbortController(); playbackController.current = abort;
-      const speaker = agentVoice.current?.name ?? "NATHION";
-      const blob = await api.speak(queue.current.shift()!, abort.signal, agentVoice.current?.profile ?? selectedVoice.current);
+      const line = queue.current.shift()!;
+      const profile = line.speaker?.profile;
+      const blob = await api.speak(line.text, abort.signal, profile ?? selectedVoice.current);
       if (!running.current || current !== playbackGeneration.current) return;
       const context = outputContext.current;
       if (!context || context.state !== "running") throw new Error("Audio sospeso. Tocca il microfono per riattivarlo.");
@@ -155,12 +170,13 @@ export function HandsFreeVoice(props: Props) {
       player.onended = () => {
         if (current !== playbackGeneration.current) return;
         player.disconnect();
-        audio.current = null; playing.current = false;
+        audio.current = null; playing.current = false; setSpeaker(null);
         void playQueue();
       };
       player.start();
       audio.current = player;
-      setStatus(`${speaker} parla · microfono attivo`);
+      setSpeaker(line.speaker ?? null);
+      setStatus(`${line.speaker?.name ?? "NATHION"} parla · microfono attivo`);
     } catch (e) { if (running.current && current === playbackGeneration.current) fail(e); }
   }
 
@@ -172,7 +188,7 @@ export function HandsFreeVoice(props: Props) {
     let part;
     while ((part = nextPhrase(remaining, props.response.done))) {
       cursor.current += part.consumed; remaining = remaining.slice(part.consumed);
-      if (part.phrase) queue.current.push(part.phrase);
+      if (part.phrase) queue.current.push({ text: part.phrase });
       if (queue.current.length > 40) { fail(new Error("Risposta troppo lunga per la coda vocale")); return; }
     }
     if (props.response.done) expected.current = false;
@@ -194,7 +210,7 @@ export function HandsFreeVoice(props: Props) {
       setActionResult(message);
       if (running.current && approve && result.status === "completed") {
         clearTimeout(idleTimeout.current);
-        queue.current.push(message);
+        queue.current.push({ text: message });
         void playQueue();
       }
     } catch (e) {
@@ -275,7 +291,6 @@ export function HandsFreeVoice(props: Props) {
             }
             setTranscript(text);
             if (!activeAgent.current) setAgentTurn(null);
-            agentVoice.current = null;
             setActionResult("");
             const phone = (window as Window & { NathionPhone?: { openSettings: () => void } }).NathionPhone;
             if (phone && /^apri (?:le )?impostazioni (?:del telefono|di android)[.!]?$/i.test(text)) {
@@ -312,7 +327,7 @@ export function HandsFreeVoice(props: Props) {
                     const acknowledgement = `Va bene, ti passo ${target.name}.`;
                     setStatus(acknowledgement);
                     setActionResult(acknowledgement);
-                    queue.current.push(acknowledgement);
+                    queue.current.push({ text: acknowledgement });
                     void playQueue();
                     if (!prompt) return;
                   }
@@ -327,7 +342,7 @@ export function HandsFreeVoice(props: Props) {
                   const request = named
                     ? { agent_id: named.id, command: prompt, model, history: agentHistory.current }
                     : { prompt, model };
-                  const run = await workspaceRequest<{ status: string; result: string; agent_name?: string; voice_profile?: string }>(
+                  const run = await workspaceRequest<AgentRun>(
                     named ? "runs/voice" : "runs", {
                       method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json" },
                       body: JSON.stringify(request),
@@ -338,16 +353,22 @@ export function HandsFreeVoice(props: Props) {
                   setAgentTurn({ name: run.agent_name ?? activeAgent.current?.name ?? "", pending: false });
                   if (run.status !== "completed") throw new Error("Attività interrotta. Apri Agenti per vedere l’esito.");
                   if (named) agentHistory.current = [...agentHistory.current.slice(-2), { request: prompt.slice(0, 1000), answer: run.result.slice(0, 2000) }];
-                  if (run.agent_name && run.voice_profile) agentVoice.current = { name: run.agent_name, profile: run.voice_profile };
                   setActionResult(run.result);
                   transcriptReceived.current = true;
-                  let remaining = run.result;
-                  for (let count = 0; count < 20; count++) {
-                    const part = nextPhrase(remaining, true);
-                    if (!part) break;
-                    queue.current.push(part.phrase);
-                    remaining = remaining.slice(part.consumed);
+                  const contributions = run.trace?.filter((item) => item.type === "completed" && item.agent && item.result) ?? [];
+                  if (!named && contributions.length > 1) {
+                    for (const item of contributions) {
+                      const agent = { id: item.agent!, name: item.agent_name ?? item.agent!, profile: item.voice_profile ?? "default" };
+                      queue.current.push({ text: `${agent.name}.` , speaker: agent });
+                      enqueueSpeech(item.result!, agent, 2);
+                    }
+                    queue.current.push({ text: "Ti riassumo i contributi." });
                   }
+                  const replySpeaker = named ? { id: named.id, name: run.agent_name ?? named.name, profile: run.voice_profile ?? named.voice_profile }
+                    : contributions.length === 1
+                      ? { id: contributions[0].agent!, name: contributions[0].agent_name ?? contributions[0].agent!, profile: contributions[0].voice_profile ?? "default" }
+                      : undefined;
+                  enqueueSpeech(run.result, replySpeaker);
                   void playQueue();
                 } catch (err) {
                   if (abort.signal.aborted || !running.current || current !== generation.current) return;
@@ -464,8 +485,11 @@ export function HandsFreeVoice(props: Props) {
     void start(true);
   }
 
-  const orbitSlice = orbitAgents.slice(orbitPage * 8, (orbitPage + 1) * 8);
-  const hasOrbit = props.showOrbit && orbitSlice.length > 0;
+  const highlightedId = speaker?.id ?? activeAgent.current?.id;
+  const speakerIndex = speaker ? orbitAgents.findIndex((agent) => agent.id === speaker.id) : -1;
+  const displayedPage = speakerIndex < 0 ? orbitPage : Math.floor(speakerIndex / 8);
+  const orbitSlice = orbitAgents.slice(displayedPage * 8, (displayedPage + 1) * 8);
+  const hasOrbit = orbitVisible && (orbitSlice.length > 0 || props.focused);
   const phase = !active ? "idle"
     : audio.current ? "speaking"
     : agentTurn?.pending || playing.current || (props.response && !props.response.done) || status === "Trascrizione locale…" ? "processing"
@@ -480,7 +504,7 @@ export function HandsFreeVoice(props: Props) {
 
   return (
     <section className={`voice-console ${props.hero ? "voice-console--hero" : "voice-console--compact"}`}
-      data-phase={phase} data-agent={agentTurn ? "" : undefined} style={{ "--voice-signal": signal } as CSSProperties} aria-label="Conversazione vocale">
+      data-phase={phase} data-focus={props.focused || undefined} data-other-speaker={speaker ? "" : undefined} data-agent={agentTurn || speaker ? "" : undefined} style={{ "--voice-signal": signal } as CSSProperties} aria-label="Conversazione vocale">
       <div className="voice-console__display">
         <div className={hasOrbit ? "agent-orbit" : "contents"}>
         <button
@@ -511,8 +535,9 @@ export function HandsFreeVoice(props: Props) {
           const angle = -Math.PI / 2 + 2 * Math.PI * index / orbitSlice.length;
           return <button key={agent.id} type="button"
             className="agent-orbit__agent" data-personal={agent.custom || undefined}
+            data-speaking={speaker?.id === agent.id || undefined} data-selected={highlightedId === agent.id || undefined}
             style={{ left: `${50 + 39 * Math.cos(angle)}%`, top: `${50 + 39 * Math.sin(angle)}%` }}
-            disabled={!props.connected} onClick={() => selectOrbitAgent(agent)}
+            disabled={!props.connected || Boolean(audio.current) || agentPending.current} onClick={() => selectOrbitAgent(agent)}
             title={agent.job_role ? `${agent.name} · ${agent.job_role}` : agent.name}
             aria-label={`Parla con ${agent.name}`}>
             <span className="agent-orbit__badge" aria-hidden="true">{agent.name.slice(0, 2).toUpperCase()}</span>
@@ -523,7 +548,7 @@ export function HandsFreeVoice(props: Props) {
         {hasOrbit && orbitAgents.length > 8 && <button type="button"
           className="rounded-lg border border-sky-400/25 px-3 py-1.5 text-xs text-sky-200"
           onClick={() => setOrbitPage((page) => (page + 1) % Math.ceil(orbitAgents.length / 8))}>
-          Altri agenti · {orbitPage + 1}/{Math.ceil(orbitAgents.length / 8)}
+          Altri agenti · {displayedPage + 1}/{Math.ceil(orbitAgents.length / 8)}
         </button>}
         <div className="voice-console__readout">
           <div className="voice-console__wave" aria-hidden="true">
@@ -531,8 +556,8 @@ export function HandsFreeVoice(props: Props) {
               <span key={index} style={{ "--bar-height": height, "--bar-delay": `${index * -55}ms` } as CSSProperties} />
             ))}
           </div>
-          {agentTurn && <p className="voice-console__agent">
-            {agentTurn.name ? `Agente · ${agentTurn.name}` : "Modalità agenti"}
+          {(speaker || agentTurn) && <p className="voice-console__agent">
+            {speaker ? `In voce · ${speaker.name}` : agentTurn?.name ? `Agente · ${agentTurn.name}` : "Modalità agenti"}
           </p>}
           <p className="voice-console__phase">{phaseLabel}</p>
           <p className="voice-console__status" role="status">{status || (props.focused ? "Tocca per continuare a parlare" : "Attiva ascolto")}</p>

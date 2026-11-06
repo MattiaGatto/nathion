@@ -328,3 +328,87 @@
 .agent-orbit__agent:disabled {
   opacity: .55;
 }
+
+.voice-stage {
+  background:
+    radial-gradient(ellipse at 50% 38%, rgb(28 59 93 / 72%), transparent 58%),
+    radial-gradient(ellipse at 12% 100%, rgb(62 31 91 / 31%), transparent 56%),
+    #060b16;
+}
+
+.voice-console[data-focus] .voice-console__display {
+  padding: .45rem 0 1rem;
+  border-color: transparent;
+  background: transparent;
+}
+
+.voice-console[data-focus] .agent-orbit {
+  width: min(100%, 61dvh, 38rem);
+  animation: orbit-expand 430ms cubic-bezier(.2, .75, .28, 1) both;
+}
+
+.voice-console[data-focus] .agent-orbit::before {
+  inset: 10%;
+  border-color: rgb(132 218 255 / 45%);
+  box-shadow: 0 0 60px rgb(71 185 255 / 14%), inset 0 0 40px rgb(71 185 255 / 10%);
+}
+
+.voice-console[data-focus] .agent-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 4%;
+  z-index: -1;
+  border: 1px solid rgb(155 211 255 / 14%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(51 175 232 / 11%), transparent 66%);
+  pointer-events: none;
+}
+
+.voice-console[data-focus] .agent-orbit > .voice-orb {
+  width: min(56%, 19rem);
+  transition: transform 280ms ease, color 180ms ease;
+}
+
+.voice-console[data-focus][data-phase="speaking"]:not([data-other-speaker]) .voice-orb {
+  transform: scale(1.06);
+}
+
+.voice-console[data-focus][data-other-speaker] .voice-orb {
+  transform: scale(.84);
+}
+
+.voice-console[data-focus] .agent-orbit__agent {
+  transition: transform 260ms ease, opacity 180ms ease;
+}
+
+.voice-console[data-focus] .agent-orbit__agent[data-selected] {
+  z-index: 2;
+  transform: translate(-50%, -50%) scale(1.17);
+  color: #e4ceff;
+}
+
+.voice-console[data-focus] .agent-orbit__agent[data-speaking] {
+  z-index: 3;
+  transform: translate(-50%, -50%) scale(1.58);
+  opacity: 1;
+  color: #f0dfff;
+}
+
+.voice-console[data-focus] .agent-orbit__agent[data-speaking] .agent-orbit__badge {
+  background: #4c3276;
+  animation: speaker-halo 900ms ease-in-out infinite alternate;
+}
+
+.voice-console[data-focus] .voice-console__readout {
+  text-align: center;
+}
+
+@keyframes orbit-expand {
+  from { transform: scale(.76); opacity: .35; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes speaker-halo {
+  from { box-shadow: 0 0 12px #a17cff, 0 0 0 2px rgb(162 112 255 / 24%); }
+  to { box-shadow: 0 0 24px #a17cff, 0 0 0 7px rgb(162 112 255 / 14%); }
+}
