@@ -22,7 +22,7 @@ from app.llm.gateway import LLMGateway, get_gateway
 from app.core.preferences import default_provider
 from app.memory import index_memory, retrieve_context
 from app.core.config import get_settings
-from app.runtime import (AgentIdentity, AgentPatch, MemoryIn, RunIn, Task, discover_skills, execute_run,
+from app.runtime import (AgentIdentity, AgentPatch, MemoryIn, RunIn, Task, VoiceTurn, discover_skills, execute_run,
                          fingerprint, retrieve, load_agents, resolve_voice_agent, spoken_words)
 
 from app.agent_documents import MAX_BYTES, MAX_DOCUMENTS, document_info, document_prefix, documents, extract_text
@@ -297,20 +297,39 @@ async def start_run(body: RunIn, db: Session = Depends(get_db), gateway: LLMGate
     return await run_workflow(body, db, gateway)
 
 
-class VoiceRunIn(BaseModel):
+class VoiceTargetIn(BaseModel):
     command: str = Field(min_length=1, max_length=24100)
+
+
+class VoiceRunIn(VoiceTargetIn):
+    agent_id: str | None = Field(default=None, max_length=60)
+    history: list[VoiceTurn] = Field(default_factory=list, max_length=3)
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+@router.post("/runs/voice/target")
+def voice_target(body: VoiceTargetIn, db: Session = Depends(get_db)):
+    agent, prompt = resolve_voice_agent(load_agents(db), body.command, allow_empty=True)
+    return {"id": agent.id, "name": agent.name, "voice_profile": agent.voice_profile, "prompt": prompt}
 
 
 @router.post("/runs/voice")
 async def voice_run(body: VoiceRunIn, db: Session = Depends(get_db), gateway: LLMGateway = Depends(get_gateway)):
     agents = load_agents(db)
-    agent, prompt = resolve_voice_agent(agents, body.command)
+    if body.agent_id:
+        agent = agents.get(body.agent_id)
+        if not agent:
+            raise HTTPException(404, "L’agente non è più disponibile. Torna a Nathion o scegli un altro agente.")
+        prompt = body.command.strip()
+        if not prompt:
+            raise HTTPException(422, "Dimmi cosa vuoi chiedere all’agente.")
+    else:
+        agent, prompt = resolve_voice_agent(agents, body.command)
     model = agent.model or body.model
     if not model:
         raise HTTPException(422, "Scegli un modello per l’agente o per la chat")
     if len(prompt) > 24000:
         raise HTTPException(422, "La richiesta supera 24.000 caratteri")
     task = Task(id="direct", agent_id=agent.id, instruction=prompt)
-    run = await run_workflow(RunIn(prompt=prompt, model=model, tasks=[task]), db, gateway, agents)
+    run = await run_workflow(RunIn(prompt=prompt, model=model, tasks=[task], voice_history=body.history), db, gateway, agents)
     return {**run, "agent_name": agent.name, "voice_profile": agent.voice_profile}

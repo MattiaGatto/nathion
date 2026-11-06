@@ -8,6 +8,7 @@ export interface Agent {
   custom: boolean;
   name: string;
   description: string;
+  job_role?: string | null;
   skills: string[];
   custom_skills: Skill[];
   tools?: string[];
@@ -63,7 +64,7 @@ export function AgentStudio({ agents, voices, onSaved, onDeleted }: {
               <button key={item.id} type="button" aria-pressed={item.id === agent.id} onClick={() => setSelected(item.id)}
                 className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 text-left text-sm hover:bg-sky-400/5 aria-pressed:border-sky-400/35 aria-pressed:bg-sky-400/10">
                 <span aria-hidden="true" className="font-mono text-xs text-sky-300">{String(index + 1).padStart(2, "0")}</span>
-                <span className="min-w-0 break-words">{item.name}{item.custom && <small className="block text-violet-300">Personale</small>}</span>
+                <span className="min-w-0 break-words">{item.name}<small className="block text-nathion-muted">{item.job_role || "Agente personale"}</small></span>
               </button>
             ))}
           </nav>
@@ -77,6 +78,7 @@ export function AgentStudio({ agents, voices, onSaved, onDeleted }: {
 function NewAgent({ onCreated, onCancel }: { onCreated: (agent: Agent) => void; onCancel: () => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [jobRole, setJobRole] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -86,7 +88,7 @@ function NewAgent({ onCreated, onCancel }: { onCreated: (agent: Agent) => void; 
     try {
       const agent = await workspaceRequest<Agent>("agents", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() }),
+        body: JSON.stringify({ name: name.trim(), description: description.trim(), job_role: jobRole.trim() || null }),
       });
       onCreated(agent);
     } catch (err) { setError(err instanceof Error ? err.message : "Creazione non riuscita."); }
@@ -97,6 +99,7 @@ function NewAgent({ onCreated, onCancel }: { onCreated: (agent: Agent) => void; 
     <h3 className="text-xl font-semibold text-violet-200">Crea un agente personale</h3>
     <p className="text-sm text-nathion-muted">Scegli un nome facile da pronunciare. Dopo la creazione puoi aggiungere skill e documenti.</p>
     <label className="block text-sm">Nome<input className={input} autoFocus required minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="Vega" /></label>
+    <label className="block text-sm">Ruolo<input className={input} value={jobRole} onChange={(e) => setJobRole(e.target.value)} maxLength={100} placeholder="Senior AI Engineer & AI Architect" /></label>
     <label className="block text-sm">Profilo e istruzioni<textarea className={input} required rows={8} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Incolla qui il profilo completo dell’agente" /><CharacterCount value={description} limit={profileLimit} /></label>
     <div className="flex gap-3">
       <button className={button} disabled={busy || name.trim().length < 2 || !description.trim() || description.length > profileLimit}>Crea agente</button>
@@ -115,6 +118,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
   const [tab, setTab] = useState("Profilo");
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description);
+  const [jobRole, setJobRole] = useState(agent.job_role ?? "");
   const [model, setModel] = useState(agent.model ?? "");
   const [voice, setVoice] = useState(agent.voice_profile);
   const [memory, setMemory] = useState(agent.memory_access);
@@ -148,7 +152,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
         body: JSON.stringify(tab === "Skill"
           ? { custom_skills: skills.map(({ name, instructions }) => ({ name: name.trim(), instructions: instructions.trim() })) }
           : { model: model.trim() || null, voice_profile: voice, memory_access: memory,
-            ...(agent.custom ? { identity: { name: name.trim(), description: description.trim() } } : {}) }),
+            ...(agent.custom ? { identity: { name: name.trim(), description: description.trim(), job_role: jobRole.trim() || null } } : {}) }),
       });
       onSaved(saved);
       return "Configurazione salvata.";
@@ -195,6 +199,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
     <div className="min-w-0 space-y-6 p-4 sm:p-6">
       <header>
         <h3 className="text-xl font-semibold">{agent.name}</h3>
+        <p className="mt-1 text-sm font-medium text-violet-200">{agent.job_role || "Agente personale"}</p>
         <p className="mt-1 line-clamp-2 break-words text-sm text-nathion-muted">{agent.description}</p>
       </header>
 
@@ -209,6 +214,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
         <div className={tab === "Profilo" ? "space-y-4" : "hidden"}>
         {agent.custom && <div className="grid gap-3">
           <label className="text-sm">Nome<input className={input} required={tab === "Profilo"} minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label className="text-sm">Ruolo<input className={input} value={jobRole} onChange={(e) => setJobRole(e.target.value)} maxLength={100} placeholder="Senior AI Engineer & AI Architect" /></label>
           <label className="text-sm">Profilo e istruzioni<textarea className={input} required={tab === "Profilo"} rows={8} value={description} onChange={(e) => setDescription(e.target.value)} /><CharacterCount value={description} limit={profileLimit} /></label>
         </div>}
         <div className="grid gap-3 sm:grid-cols-2">

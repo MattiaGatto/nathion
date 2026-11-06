@@ -113,6 +113,13 @@ public class MainActivity extends Activity {
         addControl(row, control("Apri Tailscale", CYAN, this::openTailscale));
         addControl(row, control("Disconnetti VPN", 0xffffbf9d, this::disconnectTailscale));
         root.addView(row);
+        if (getPackageManager().getLaunchIntentForPackage(TAILSCALE_PACKAGE) == null) {
+            TextView warning = new TextView(this);
+            warning.setText("Tailscale è necessario per collegarti al tuo PC. Installalo e accedi con lo stesso account del PC.");
+            warning.setTextColor(0xffffbf9d);
+            warning.setPadding(dp(12), dp(8), dp(12), dp(8));
+            root.addView(warning);
+        }
     }
 
     private void addControl(LinearLayout row, Button button) {
@@ -136,7 +143,19 @@ public class MainActivity extends Activity {
     private void openTailscale() {
         Intent launch = getPackageManager().getLaunchIntentForPackage(TAILSCALE_PACKAGE);
         if (launch == null) {
-            Toast.makeText(this, "Installa Tailscale dal Play Store.", Toast.LENGTH_LONG).show();
+            new AlertDialog.Builder(this)
+                .setTitle("Serve Tailscale")
+                .setMessage("Installa Tailscale e attiva la VPN per raggiungere il tuo PC.")
+                .setNegativeButton("Indietro", null)
+                .setPositiveButton("Play Store", (dialog, which) -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW,
+                            Uri.parse("market://details?id=" + TAILSCALE_PACKAGE)));
+                    } catch (ActivityNotFoundException e) {
+                        Toast.makeText(this, "Cerca Tailscale nello store del telefono.", Toast.LENGTH_LONG).show();
+                    }
+                })
+                .show();
             return;
         }
         try {

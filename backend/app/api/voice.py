@@ -153,7 +153,7 @@ async def transcribe(request: Request, wake_hint: bool = False, agents_hint: boo
     if agents_hint:
         from app.runtime import load_agents
 
-        names = tuple(agent.name for agent in load_agents(db).values() if agent.custom)
+        names = tuple(agent.name for agent in sorted(load_agents(db).values(), key=lambda agent: not agent.custom))
     text = await execute(partial(transcribe_audio, wake_hint=wake_hint, agent_names=names), bytes(audio))
     return {"text": text}
 

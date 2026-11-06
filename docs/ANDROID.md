@@ -2,7 +2,7 @@
 
 ## APK per il PC di Mattia
 
-Il file firmato NATHION 1.4 si trova in `android/build/NATHION.apk`. Puoi installarlo sopra la versione già installata per mantenere il server memorizzato. Copialo sul telefono
+Il file firmato NATHION 1.5 si trova in `android/build/NATHION.apk`. Puoi installarlo sopra la versione già installata per mantenere il server memorizzato. Copialo sul telefono
 via USB o attraverso un canale privato. Aprilo dal gestore file di Android e
 consenti al gestore di installare l'app se Android lo richiede.
 
@@ -22,7 +22,7 @@ lo riconosce senza una configurazione di fiducia separata.
 Tocca il microfono della console, consenti il permesso Android e pronuncia **Ehi Nathion**
 seguito dalla richiesta. Per chiamare uno specialista, dì per esempio
 **Ehi Nathion, chiedi a Vega di leggere il manuale**. In modalità voce la chat
-resta dietro la console. Il colore viola indica che hai chiamato un agente.
+resta dietro la console. Il colore viola e il nome mostrano quale agente è attivo. Puoi continuare a parlargli senza ripetere il nome. Di’ **Torna a Nathion** per chiudere il passaggio.
 **Mostra chat** riporta alla conversazione. Durante la lettura, **Tocca per parlare** ti ridà il turno. Dopo 20 secondi di inattività puoi
 toccare di nuovo il microfono per continuare senza ripetere la parola chiave.
 La console dell’APK registra tramite il microfono nativo di Android. Tieni NATHION in primo piano e usa l’orientamento verticale. In **Opzioni vocali**
