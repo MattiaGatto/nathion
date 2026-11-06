@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccount } from "./AccessGate";
 import { api, workspaceRequest } from "../api/client";
-import { claimAudio, releaseAudio } from "../audioOwner";
+import { claimAudio, openMicrophone, releaseAudio } from "../audioOwner";
 import { TurnDetector, wavAudio, nextPhrase } from "../voiceSession";
 
 interface Props { hero?: boolean; focused: boolean; onFocus: () => void; model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
@@ -185,7 +185,7 @@ export function HandsFreeVoice(props: Props) {
       if (!availability.enabled || !availability.whisper_model_present || !availability.piper_model_present) throw new Error("Motore vocale non pronto. Controlla i modelli locali.");
       if (!running.current || current !== generation.current) return;
       setProfiles(availability.profiles);
-      input = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      input = await openMicrophone(true, () => running.current && current === generation.current);
       if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
       await context.audioWorklet.addModule("/voice-capture.js");
       if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }

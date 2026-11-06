@@ -1,4 +1,4 @@
-param([int]$VersionCode = 3)
+param([int]$VersionCode = 4)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $tools = Join-Path $PSScriptRoot '.tools'

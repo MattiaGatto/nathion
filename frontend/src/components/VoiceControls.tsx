@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, voiceWebSocketUrl } from "../api/client";
-import { claimAudio, releaseAudio } from "../audioOwner";
+import { claimAudio, openMicrophone, releaseAudio } from "../audioOwner";
 
 export interface VoiceSegment { text: string; profile?: string; speaker?: string; }
 interface Props { disabled: boolean; onTranscript: (text: string) => void; reply: string; segments?: VoiceSegment[]; }
@@ -91,7 +91,7 @@ export function VoiceControls({ disabled, onTranscript, reply, segments }: Props
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
         throw new Error("Microfono non disponibile. Usa localhost o una connessione HTTPS.");
-      const input = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const input = await openMicrophone(false, () => current === generation.current);
       if (current !== generation.current) { input.getTracks().forEach((t) => t.stop()); return; }
       stream.current = input;
       const mime = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]

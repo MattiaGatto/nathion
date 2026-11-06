@@ -7,6 +7,8 @@ import android.content.Intent;
 import android.content.ActivityNotFoundException;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -35,6 +37,10 @@ public class MainActivity extends Activity {
     private static final int MICROPHONE = 10;
     private static final int PICK_FILE = 11;
     private static final int SAVE_LOG = 12;
+    private static final String TAILSCALE_PACKAGE = "com.tailscale.ipn";
+    private static final int SURFACE = 0xff111c2d;
+    private static final int CYAN = 0xffa3eaff;
+    private static final int MUTED = 0xffaabed2;
     private static final int MAX_EXPORT = 16 * 1024 * 1024;
     private ValueCallback<Uri[]> pendingFile;
     private byte[] pendingExport;
@@ -42,6 +48,8 @@ public class MainActivity extends Activity {
     private WebView web;
     private PermissionRequest pendingMicrophone;
     private URI server;
+    private boolean reloadAfterTailscale;
+    private boolean resumed;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -50,7 +58,7 @@ public class MainActivity extends Activity {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         String saved = getPreferences(MODE_PRIVATE).getString("server", "");
         if (saved.isEmpty()) showConnection();
-        else connect(saved);
+        else if (!connect(saved)) showConnection();
     }
 
     private void layout() {
@@ -60,29 +68,145 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private GradientDrawable pill(int color, int border) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(dp(12));
+        background.setStroke(dp(1), border);
+        return background;
+    }
+
+    private Button control(String label, int color, Runnable action) {
+        Button button = new Button(this, null, android.R.attr.borderlessButtonStyle);
+        button.setText(label);
+        button.setTextColor(color);
+        button.setTextSize(13);
+        button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setPadding(dp(4), 0, dp(4), 0);
+        button.setBackground(pill(SURFACE, 0xff304762));
+        button.setOnClickListener(view -> action.run());
+        return button;
+    }
+
+    private void networkControls(boolean connected) {
+        LinearLayout row = new LinearLayout(this);
+        row.setPadding(dp(8), dp(6), dp(8), dp(6));
+        if (connected) addControl(row, control("PC  ⋯", CYAN, this::connectionOptions));
+        addControl(row, control("Apri Tailscale", CYAN, this::openTailscale));
+        addControl(row, control("Disconnetti VPN", 0xffffbf9d, this::disconnectTailscale));
+        root.addView(row);
+    }
+
+    private void addControl(LinearLayout row, Button button) {
+        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(0, dp(48), 1);
+        size.setMargins(dp(3), 0, dp(3), 0);
+        row.addView(button, size);
+    }
+
+    private void connectionOptions() {
+        new AlertDialog.Builder(this)
+            .setTitle("Connessione al PC")
+            .setItems(new String[]{"Ricarica", "Cambia PC", "Chiudi NATHION"}, (dialog, which) -> {
+                if (which == 0 && web != null) web.loadUrl(origin(server));
+                if (which == 1) showConnection();
+                if (which == 2) finishAndRemoveTask();
+            })
+            .setNegativeButton("Indietro", null)
+            .show();
+    }
+
+    private void openTailscale() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(TAILSCALE_PACKAGE);
+        if (launch == null) {
+            Toast.makeText(this, "Installa Tailscale dal Play Store.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            reloadAfterTailscale = web != null;
+            startActivity(launch);
+        } catch (ActivityNotFoundException e) {
+            reloadAfterTailscale = false;
+            Toast.makeText(this, "Tailscale non è disponibile.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void disconnectTailscale() {
+        Intent disconnect = new Intent(TAILSCALE_PACKAGE + ".DISCONNECT_VPN").setPackage(TAILSCALE_PACKAGE);
+        if (getPackageManager().queryBroadcastReceivers(disconnect, 0).isEmpty()) {
+            Toast.makeText(this, "Disattiva la VPN direttamente in Tailscale.", Toast.LENGTH_LONG).show();
+            openTailscale();
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("Disconnettere Tailscale?")
+            .setMessage("Il telefono perderà l’accesso a NATHION e agli altri servizi della rete privata.")
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Disconnetti", (dialog, which) -> {
+                if (web != null) {
+                    web.evaluateJavascript("window.dispatchEvent(new Event('nathion-background'))", null);
+                    web.stopLoading();
+                }
+                sendBroadcast(disconnect);
+                Toast.makeText(this, "Disconnessione richiesta a Tailscale", Toast.LENGTH_SHORT).show();
+                showConnection();
+            })
+            .show();
+    }
+
     private void showConnection() {
         closeWeb();
         layout();
-        int padding = (int)(20 * getResources().getDisplayMetrics().density);
-        root.setPadding(padding, padding, padding, padding);
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(20), dp(22), dp(20), dp(18));
+        card.setBackground(pill(SURFACE, 0xff304762));
+        LinearLayout frame = new LinearLayout(this);
+        frame.setPadding(dp(16), dp(20), dp(16), dp(16));
+        frame.addView(card, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        scroll.addView(frame);
+        networkControls(false);
+        root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        TextView eyebrow = new TextView(this);
+        eyebrow.setText("NATHION  ·  RETE PRIVATA");
+        eyebrow.setTextColor(CYAN);
+        eyebrow.setTextSize(12);
+        eyebrow.setLetterSpacing(.12f);
+        card.addView(eyebrow);
+        TextView title = new TextView(this);
+        title.setText("Connetti il tuo PC");
+        title.setTextColor(0xfff0f6ff);
+        title.setTextSize(25);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setPadding(0, dp(8), 0, dp(8));
+        card.addView(title);
         TextView intro = new TextView(this);
-        intro.setText("NATHION\n\nConnetti Tailscale sul telefono e inserisci l’indirizzo HTTPS privato del PC.");
-        intro.setTextSize(18);
-        root.addView(intro);
+        intro.setText("Apri Tailscale e attiva la VPN. Poi torna qui e accedi al tuo assistente.");
+        intro.setTextColor(MUTED);
+        intro.setTextSize(14);
+        card.addView(intro);
         EditText address = new EditText(this);
         address.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         address.setSingleLine(true);
+        address.setTextSize(14);
+        address.setPadding(dp(10), 0, dp(10), 0);
+        address.setBackground(pill(0xff0b1422, 0xff385370));
         address.setHint("https://nome-pc.rete.ts.net:8443");
         int configuredHost = getResources().getIdentifier("private_host", "string", getPackageName());
         String preset = configuredHost == 0 ? "" : getString(configuredHost);
         address.setText(getPreferences(MODE_PRIVATE).getString("server", preset));
-        root.addView(address);
-        Button go = new Button(this);
-        go.setText("Connetti al PC");
-        go.setOnClickListener(view -> {
+        LinearLayout.LayoutParams field = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+        field.setMargins(0, dp(16), 0, dp(10));
+        card.addView(address, field);
+        Button go = control("Connetti al PC", CYAN, () -> {
             if (!connect(address.getText().toString().trim())) address.setError("Inserisci un indirizzo HTTPS Tailscale valido.");
         });
-        root.addView(go);
+        card.addView(go, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
     }
 
     private boolean connect(String value) {
@@ -99,21 +223,11 @@ public class MainActivity extends Activity {
         server = candidate;
         getPreferences(MODE_PRIVATE).edit().putString("server", origin(candidate)).apply();
         layout();
-        Button connectionMenu = new Button(this, null, android.R.attr.borderlessButtonStyle);
-        connectionMenu.setText("Connessione PC  ⋯");
-        connectionMenu.setAllCaps(false);
-        connectionMenu.setTextSize(13);
-        connectionMenu.setOnClickListener(view -> new AlertDialog.Builder(this)
-            .setTitle("Connessione NATHION")
-            .setMessage(origin(server))
-            .setNeutralButton("Cambia PC", (dialog, which) -> showConnection())
-            .setNegativeButton("Chiudi", null)
-            .setPositiveButton("Ricarica", (dialog, which) -> web.loadUrl(origin(server)))
-            .show());
-        root.addView(connectionMenu, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, (int) (44 * getResources().getDisplayMetrics().density)));
+        networkControls(true);
         TextView connection = new TextView(this);
-        connection.setText("Connessione al PC…");
+        connection.setText("Connessione privata al PC…");
+        connection.setTextColor(MUTED);
+        connection.setPadding(dp(12), dp(8), dp(12), dp(8));
         root.addView(connection);
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
@@ -129,17 +243,17 @@ public class MainActivity extends Activity {
                 return !sameOrigin(request.getUrl());
             }
             @Override public void onPageFinished(WebView view, String url) {
-                if (sameOrigin(Uri.parse(url)) && connection.getText().equals("Connessione al PC…"))
+                if (sameOrigin(Uri.parse(url)) && connection.getText().equals("Connessione privata al PC…"))
                     connection.setVisibility(android.view.View.GONE);
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
                     connection.setVisibility(android.view.View.VISIBLE);
-                    connection.setText("PC non raggiungibile. Controlla Tailscale e NATHION sul PC, poi usa Connessione PC → Ricarica.");
+                    connection.setText("PC non raggiungibile. Apri Tailscale, attiva la VPN e torna qui. Puoi riprovare da PC → Ricarica.");
                 }
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
-                connection.setText("Connessione al PC…");
+                connection.setText("Connessione privata al PC…");
                 connection.setVisibility(android.view.View.VISIBLE);
             }
         });
@@ -170,11 +284,11 @@ public class MainActivity extends Activity {
                     request.deny();
                     return;
                 }
+                if (pendingMicrophone != null) pendingMicrophone.deny();
+                pendingMicrophone = request;
                 if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                    grantPendingMicrophone();
                 } else {
-                    if (pendingMicrophone != null) pendingMicrophone.deny();
-                    pendingMicrophone = request;
                     requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MICROPHONE);
                 }
             }
@@ -262,10 +376,20 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code != MICROPHONE || pendingMicrophone == null) return;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            grantPendingMicrophone();
+        } else {
+            pendingMicrophone.deny();
+            pendingMicrophone = null;
+        }
+    }
+
+    private void grantPendingMicrophone() {
+        if (!resumed || pendingMicrophone == null
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         PermissionRequest request = pendingMicrophone;
         pendingMicrophone = null;
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED && sameOrigin(request.getOrigin()))
-            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+        if (sameOrigin(request.getOrigin())) request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
         else request.deny();
     }
 
@@ -282,6 +406,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        resumed = false;
         if (web != null) web.onPause();
         super.onPause();
     }
@@ -292,7 +417,13 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (web != null) web.onResume();
+        if (web != null) {
+            web.onResume();
+            if (reloadAfterTailscale) web.loadUrl(origin(server));
+        }
+        reloadAfterTailscale = false;
+        resumed = true;
+        grantPendingMicrophone();
     }
     @Override protected void onDestroy() {
         closeWeb();

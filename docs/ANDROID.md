@@ -2,13 +2,13 @@
 
 ## APK per il PC di Mattia
 
-Il file firmato NATHION 1.2 si trova in `android/build/NATHION.apk`. Puoi installarlo sopra la versione già installata per mantenere il server memorizzato. Copialo sul telefono
+Il file firmato NATHION 1.3 si trova in `android/build/NATHION.apk`. Puoi installarlo sopra la versione già installata per mantenere il server memorizzato. Copialo sul telefono
 via USB o attraverso un canale privato. Aprilo dal gestore file di Android e
 consenti al gestore di installare l'app se Android lo richiede.
 
-Connetti Tailscale sul telefono con lo stesso account del PC. Apri NATHION,
+In NATHION tocca **Apri Tailscale** e attiva la VPN con lo stesso account del PC. Torna in NATHION,
 premi **Connetti al PC** sull’indirizzo precompilato e accedi con l’email e la password dell’app. Se il browser sul PC usa già una sessione, l'APK richiede comunque
-le proprie credenziali. **Profilo** contiene i dati personali e la funzione Esci.
+le proprie credenziali. **Disconnetti VPN** chiede conferma prima di scollegare Tailscale. Il menu **PC** permette anche di chiudere NATHION. **Profilo** contiene i dati personali e la funzione Esci.
 Per registrare un ospite serve un invito emesso dall'amministratore.
 
 L'ingresso HTTPS Docker ascolta soltanto sull'indirizzo privato Tailscale
@@ -31,7 +31,7 @@ puoi abilitare l’interruzione parlando, preferibilmente con le cuffie.
 **Impostazioni → Modifica profilo** apre foto, dati personali e bio Markdown.
 In **Agenti → Studio → Documenti** puoi allegare un file dal selettore Android.
 **Registro attività → Esporta registro JSON** apre la scelta della cartella
-in cui salvare il file. Il menu **Connessione PC** permette di ricaricare o
+in cui salvare il file. Il menu **PC** permette di ricaricare o
 cambiare il server.
 
 Sul PC di Mattia sono attivi Whisper Small per la trascrizione e Piper Ugo
