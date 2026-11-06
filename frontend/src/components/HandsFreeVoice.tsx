@@ -5,9 +5,10 @@ import { claimAudio, openMicrophone, releaseAudio } from "../audioOwner";
 import { TurnDetector, wavAudio, nextPhrase } from "../voiceSession";
 
 interface VoiceAgent { id: string; name: string; voice_profile: string; }
+interface OrbitAgent extends VoiceAgent { job_role?: string | null; custom: boolean; }
 interface VoiceTurn { request: string; answer: string; }
 
-interface Props { hero?: boolean; focused: boolean; onFocus: () => void; model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
+interface Props { hero?: boolean; showOrbit: boolean; agentRevision: number; focused: boolean; onFocus: () => void; model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
 const pcCommands = [
   { pattern: /^apri (?:la )?calcolatrice(?: sul pc)?[.!]?$/i, tool: "open_calculator", label: "Apri Calcolatrice sul PC" },
   { pattern: /^apri (?:il )?blocco note(?: sul pc)?[.!]?$/i, tool: "open_notepad", label: "Apri Blocco note sul PC" },
@@ -19,6 +20,17 @@ export function HandsFreeVoice(props: Props) {
   const [pcAction, setPcAction] = useState<{ id: string; label: string } | null>(null);
   const [pcBusy, setPcBusy] = useState(false);
   const [actionResult, setActionResult] = useState("");
+  const [orbitAgents, setOrbitAgents] = useState<OrbitAgent[]>([]);
+  const [orbitPage, setOrbitPage] = useState(0);
+  useEffect(() => {
+    if (!props.showOrbit) return;
+    const controller = new AbortController();
+    workspaceRequest<OrbitAgent[]>("agents", { signal: controller.signal }).then((list) => {
+      setOrbitAgents(list);
+      setOrbitPage((page) => Math.min(page, Math.max(0, Math.ceil(list.length / 8) - 1)));
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [props.agentRevision, props.showOrbit]);
   const [agentTurn, setAgentTurn] = useState<{ name: string; pending: boolean } | null>(null);
   const activeAgent = useRef<VoiceAgent | null>(null);
   const agentHistory = useRef<VoiceTurn[]>([]);
@@ -440,10 +452,20 @@ export function HandsFreeVoice(props: Props) {
       stop();
       latest.current.onInterrupt();
     } else {
+      if (props.showOrbit && activeAgent.current) returnToNathion(false);
       void start(props.focused);
     }
   }
 
+  function selectOrbitAgent(agent: OrbitAgent) {
+    if (activeAgent.current?.id !== agent.id) agentHistory.current = [];
+    activeAgent.current = agent;
+    setAgentTurn({ name: agent.name, pending: false });
+    void start(true);
+  }
+
+  const orbitSlice = orbitAgents.slice(orbitPage * 8, (orbitPage + 1) * 8);
+  const hasOrbit = props.showOrbit && orbitSlice.length > 0;
   const phase = !active ? "idle"
     : audio.current ? "speaking"
     : agentTurn?.pending || playing.current || (props.response && !props.response.done) || status === "Trascrizione locale…" ? "processing"
@@ -460,6 +482,7 @@ export function HandsFreeVoice(props: Props) {
     <section className={`voice-console ${props.hero ? "voice-console--hero" : "voice-console--compact"}`}
       data-phase={phase} data-agent={agentTurn ? "" : undefined} style={{ "--voice-signal": signal } as CSSProperties} aria-label="Conversazione vocale">
       <div className="voice-console__display">
+        <div className={hasOrbit ? "agent-orbit" : "contents"}>
         <button
           className="voice-orb"
           aria-label={active ? "Ferma il microfono" : props.focused ? "Continua a parlare" : "Attiva ascolto vocale"}
@@ -484,6 +507,24 @@ export function HandsFreeVoice(props: Props) {
             </svg>
           </span>
         </button>
+        {hasOrbit && orbitSlice.map((agent, index) => {
+          const angle = -Math.PI / 2 + 2 * Math.PI * index / orbitSlice.length;
+          return <button key={agent.id} type="button"
+            className="agent-orbit__agent" data-personal={agent.custom || undefined}
+            style={{ left: `${50 + 39 * Math.cos(angle)}%`, top: `${50 + 39 * Math.sin(angle)}%` }}
+            disabled={!props.connected} onClick={() => selectOrbitAgent(agent)}
+            title={agent.job_role ? `${agent.name} · ${agent.job_role}` : agent.name}
+            aria-label={`Parla con ${agent.name}`}>
+            <span className="agent-orbit__badge" aria-hidden="true">{agent.name.slice(0, 2).toUpperCase()}</span>
+            <span className="agent-orbit__name">{agent.name}</span>
+          </button>;
+        })}
+        </div>
+        {hasOrbit && orbitAgents.length > 8 && <button type="button"
+          className="rounded-lg border border-sky-400/25 px-3 py-1.5 text-xs text-sky-200"
+          onClick={() => setOrbitPage((page) => (page + 1) % Math.ceil(orbitAgents.length / 8))}>
+          Altri agenti · {orbitPage + 1}/{Math.ceil(orbitAgents.length / 8)}
+        </button>}
         <div className="voice-console__readout">
           <div className="voice-console__wave" aria-hidden="true">
             {[0.28, 0.46, 0.65, 0.87, 1, 0.7, 0.5, 0.74, 0.41, 0.29, 0.55].map((height, index) => (

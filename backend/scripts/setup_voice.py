@@ -16,6 +16,7 @@ def main() -> None:
     parser.add_argument("--include-second-voice", action="store_true")
     parser.add_argument("--separate-whisper", action="store_true", help="Download only Whisper into whisper-<size>.")
     parser.add_argument("--include-ugo", action="store_true", help="Also download the Italian Ugo Medium voice.")
+    parser.add_argument("--agent-voices-only", action="store_true", help="Download Aurora and Giorgio for agent presets.")
     args = parser.parse_args()
     models = ROOT / "models"
     models.mkdir(exist_ok=True)
@@ -47,6 +48,13 @@ def main() -> None:
             "medium/it_IT-ugo-medium.onnx.json": "ugo.onnx.json",
             "medium/MODEL_CARD": "UGO_MODEL_CARD.txt",
         }))
+    if args.agent_voices_only:
+        sources = [("kirys79/piper_italiano", {
+            "Aurora/it_IT-aurora-medium.onnx": "aurora.onnx",
+            "Aurora/it_IT-aurora-medium.onnx.json": "aurora.onnx.json",
+            "Giorgio/giorgio-epoch=5028-step=1098436.onnx": "giorgio.onnx",
+            "Giorgio/giorgio-epoch=5028-step=1098436.json": "giorgio.onnx.json",
+        })]
     for repo, files in sources:
         info = api.model_info(repo, files_metadata=True)
         revision = info.sha
@@ -66,7 +74,7 @@ def main() -> None:
             shutil.copyfile(cached, target)
             manifest.append({"repository": repo, "revision": revision,
                              "file": filename, "local": destination, "sha256": digest})
-    manifest_path = models / (f"manifest-{whisper_dir}.json" if args.separate_whisper else "manifest.json")
+    manifest_path = models / ("manifest-agent-voices.json" if args.agent_voices_only else f"manifest-{whisper_dir}.json" if args.separate_whisper else "manifest.json")
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Voice models ready in {models}")
 

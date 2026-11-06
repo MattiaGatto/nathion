@@ -11,6 +11,7 @@ import { VoiceControls } from "./VoiceControls";
 
 interface Props {
   conversationId: string;
+  agentRevision: number;
   model: string | null;
   onConversationUpdated: () => void;
   onOpenSettings: () => void;
@@ -18,6 +19,7 @@ interface Props {
 
 export function ChatWindow({
   conversationId,
+  agentRevision,
   model,
   onConversationUpdated,
   onOpenSettings,
@@ -140,7 +142,7 @@ export function ChatWindow({
           <p className="mt-3 text-sm text-nathion-muted">Attiva l’ascolto, poi di’ «Ehi Nathion» e fai la tua domanda.</p>
         </div>}
         <div className="w-full max-w-xl">
-          <HandsFreeVoice hero={voiceFocus || showHero} focused={voiceFocus} onFocus={() => setVoiceFocus(true)} model={model} connected={status === "open"} response={streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
+          <HandsFreeVoice agentRevision={agentRevision} showOrbit={showHero && !voiceFocus} hero={voiceFocus || showHero} focused={voiceFocus} onFocus={() => setVoiceFocus(true)} model={model} connected={status === "open"} response={streaming} onSend={(text) => handleSend(text, true)} onInterrupt={cancel} />
         </div>
         {showHero && !voiceFocus && <div className="mb-auto" />}
       </div>

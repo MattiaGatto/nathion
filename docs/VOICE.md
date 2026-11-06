@@ -24,6 +24,18 @@ ricrea il backend Docker. Nella console vocale Ugo diventa la scelta iniziale
 quando è installato. Paola e Riccardo sono disponibili nelle opzioni vocali.
 [Ugo Medium di Einrich99, CC BY 4.0](https://huggingface.co/Einrich99/PiperTTS-UGO-Italian).
 
+Per installare le voci dei preset:
+
+```powershell
+python scripts/setup_voice.py --agent-voices-only
+```
+
+I preset iniziali sono Atlante con Ugo, Dedalo con Giorgio, Cifra con Paola
+e Oracolo con Aurora. Se una voce aggiuntiva non è installata, il preset
+usa Paola. Le voci di Aurora e Giorgio sono del progetto
+[Piper Italiano di kirys79, CC BY 4.0](https://huggingface.co/kirys79/piper_italiano).
+
+
 I file prodotti nella directory `models/` del repository sono:
 
 - `whisper/`: un modello CTranslate2 completo compatibile con faster-whisper.

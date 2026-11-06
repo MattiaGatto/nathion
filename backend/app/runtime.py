@@ -19,11 +19,12 @@ from fastapi import HTTPException
 from app.db.models import Memory, Run, AppSettings
 from app.core.identity import preference_key, owner_id, identity
 from app.core.preferences import profile_bio
+from app.core.config import get_settings
 from app.llm.base import ChatMessage
 from app.llm.gateway import LLMGateway
 from app.api.tools import calculate
 from app.memory import retrieve_context
-from app.agent_documents import documents, relevant_excerpts
+from app.agent_documents import document_prefix, documents, relevant_excerpts
 
 
 class CustomSkill(BaseModel):
@@ -64,14 +65,17 @@ class Agent(BaseModel):
 
 
 AGENTS = {item.id: item for item in [
-    Agent(id="general", name="Atlante", job_role="General Assistant", description="Sintesi e assistenza generale", instructions="Rispondi in italiano in modo chiaro e verificabile.", tools=["calculator", "clock"]),
-    Agent(id="architect", name="Dedalo", job_role="Software Architect", description="Architettura e compromessi", instructions="Progetta soluzioni modulari, esplicita vincoli e compromessi.", skills=["architecture"]),
+    Agent(id="general", name="Atlante", voice_profile="ugo", job_role="General Assistant", description="Sintesi e assistenza generale", instructions="Rispondi in italiano in modo chiaro e verificabile.", tools=["calculator", "clock"]),
+    Agent(id="architect", name="Dedalo", voice_profile="giorgio", job_role="Software Architect", description="Architettura e compromessi", instructions="Progetta soluzioni modulari, esplicita vincoli e compromessi.", skills=["architecture"]),
     Agent(id="coding", name="Cifra", job_role="Coding Agent", description="Sviluppo e revisione", instructions="Scrivi codice verificabile e segnala assunzioni e test necessari.", skills=["code-review"]),
     Agent(id="data", name="Delta", job_role="Data Engineering", description="Database e pipeline", instructions="Progetta pipeline affidabili e contratti dati espliciti.", skills=["architecture"]),
     Agent(id="ai", name="Visione", job_role="AI Engineering", description="Modelli e valutazioni", instructions="Valuta modelli e metriche con attenzione a costi, privacy e limiti."),
-    Agent(id="research", name="Oracolo", job_role="Research Agent", description="Analisi delle informazioni fornite", instructions="Analizza le fonti fornite. Non inventare ricerche web o citazioni: non hai accesso al browser."),
+    Agent(id="research", name="Oracolo", voice_profile="aurora", job_role="Research Agent", description="Analisi delle informazioni fornite", instructions="Analizza le fonti fornite. Non inventare ricerche web o citazioni: non hai accesso al browser."),
     Agent(id="productivity", name="Crono", job_role="Productivity Agent", description="Piani e organizzazione", instructions="Definisci passi concreti, dipendenze e criteri di completamento.", skills=["planning"]),
 ]}
+
+
+DEFAULT_AGENTS = {"general", "architect", "coding", "research"}
 
 
 class AgentPatch(BaseModel):
@@ -87,7 +91,20 @@ def load_agents(db: Session) -> dict[str, Agent]:
     result = {}
     for key, agent in AGENTS.items():
         setting = db.get(AppSettings, preference_key(f"agent:{key}"))
-        values = {**agent.model_dump(), **(json.loads(setting.value) if setting else {})}
+        saved = json.loads(setting.value) if setting else {}
+        if saved.get("deleted"):
+            continue
+        if key not in DEFAULT_AGENTS and not saved:
+            has_documents = db.query(AppSettings.key).filter(
+                AppSettings.key.startswith(document_prefix(key), autoescape=True)
+            ).first()
+            if not has_documents:
+                continue
+        values = {**agent.model_dump(), **saved}
+        if "voice_profile" not in saved and agent.voice_profile != "default":
+            voice_path = get_settings().voice_profiles.get(agent.voice_profile)
+            if not voice_path or not Path(voice_path).is_file() or not Path(voice_path + ".json").is_file():
+                values["voice_profile"] = "default"
         if identity.get() and not identity.get().is_admin and values.get("model") not in identity.get().allowed_models:
             values["model"] = None
         result[key] = Agent.model_validate(values)
@@ -238,24 +255,26 @@ class RunIn(BaseModel):
         return self
 
 
-def plan(prompt: str) -> list[Task]:
-    if prompt.casefold().startswith("calcola "):
+def plan(prompt: str, agents: dict[str, Agent]) -> list[Task]:
+    if not agents:
+        raise HTTPException(422, "Aggiungi o ripristina un agente prima di avviare un’attività")
+    if "general" in agents and prompt.casefold().startswith("calcola "):
         return [Task(id="calculate", agent_id="general", instruction=prompt[8:].strip(), tool="calculator")]
     selected = []
     for agent, words in [("architect", ["architett", "architecture"]), ("coding", ["codice", "python", "typescript", "debug"]),
                          ("data", ["database", "pipeline", "sql"]), ("ai", ["machine learning", "modello ai"]),
                          ("productivity", ["organizza", "pianifica"]), ("research", ["analizza", "confronta"])]:
-        if any(word in prompt.casefold() for word in words):
+        if agent in agents and any(word in prompt.casefold() for word in words):
             selected.append(agent)
-    selected = selected[:3] or ["general"]
+    selected = selected[:3] or ["general" if "general" in agents else next(iter(agents))]
     return [Task(id=agent, agent_id=agent, instruction=prompt) for agent in selected]
 
 
 async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dict[str, Agent] | None = None) -> Run:
     authorize_compute(body.model, body.provider, charge=False)
-    tasks = body.tasks or plan(body.prompt)
     if agents is None:
         agents = load_agents(db)
+    tasks = body.tasks or plan(body.prompt, agents)
     if any(task.agent_id not in agents for task in tasks):
         raise HTTPException(422, "Il piano contiene un agente inesistente o eliminato")
     skills = discover_skills()

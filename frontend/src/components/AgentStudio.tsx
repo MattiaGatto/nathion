@@ -41,6 +41,7 @@ export function AgentStudio({ agents, voices, onSaved, onDeleted }: {
 }) {
   const [selected, setSelected] = useState("");
   const [creating, setCreating] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
   const agent = agents.find((item) => item.id === selected) ?? agents[0];
   return (
     <section className="overflow-hidden rounded-2xl border border-sky-400/25 bg-nathion-panel" aria-labelledby="agent-studio-title">
@@ -48,7 +49,10 @@ export function AgentStudio({ agents, voices, onSaved, onDeleted }: {
         <p className="font-mono text-[11px] uppercase tracking-[.28em] text-sky-300">Nathion · Configurazione</p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <h2 id="agent-studio-title" className="text-2xl font-semibold">Studio agenti</h2>
-          <button type="button" className={button} onClick={() => setCreating(true)}>+ Nuovo agente</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={button} onClick={() => { setPresetsOpen(!presetsOpen); setCreating(false); }}>Preset</button>
+            <button type="button" className={button} onClick={() => { setCreating(true); setPresetsOpen(false); }}>+ Nuovo agente</button>
+          </div>
         </div>
         <p className="mt-2 max-w-2xl text-sm text-nathion-muted">Scegli uno specialista. Le skill guidano il suo lavoro. I documenti sono fonti consultabili solo da questo agente quando sono pertinenti.</p>
       </header>
@@ -57,22 +61,57 @@ export function AgentStudio({ agents, voices, onSaved, onDeleted }: {
         setSelected(created.id);
         setCreating(false);
       }} />}
-      {!creating && (agent ? (
+      {presetsOpen && <AgentPresets onRestore={(restored) => {
+        onSaved(restored);
+        setSelected(restored.id);
+        setPresetsOpen(false);
+      }} />}
+      {!creating && !presetsOpen && (agent ? (
         <div className="grid md:grid-cols-[15rem_minmax(0,1fr)]">
           <nav aria-label="Scegli un agente" className="grid content-start gap-1 border-b border-nathion-border p-3 sm:grid-cols-2 md:grid-cols-1 md:border-b-0 md:border-r">
             {agents.map((item, index) => (
               <button key={item.id} type="button" aria-pressed={item.id === agent.id} onClick={() => setSelected(item.id)}
                 className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 text-left text-sm hover:bg-sky-400/5 aria-pressed:border-sky-400/35 aria-pressed:bg-sky-400/10">
                 <span aria-hidden="true" className="font-mono text-xs text-sky-300">{String(index + 1).padStart(2, "0")}</span>
-                <span className="min-w-0 break-words">{item.name}<small className="block text-nathion-muted">{item.job_role || "Agente personale"}</small></span>
+                <span className="min-w-0 break-words">{item.name}<small className="block text-nathion-muted">{item.job_role || "Ruolo da definire"}</small>{item.custom && <small className="mt-1 inline-block rounded bg-violet-400/15 px-1.5 text-violet-200">Personale</small>}</span>
               </button>
             ))}
           </nav>
           <AgentEditor key={agent.id} agent={agent} voices={voices} onSaved={onSaved} onDeleted={onDeleted} />
         </div>
-      ) : <p className="p-5 text-sm text-nathion-muted">Caricamento degli agenti…</p>)}
+      ) : <p className="p-5 text-sm text-nathion-muted">Nessun agente attivo. Aggiungi un agente o scegli un preset.</p>)}
     </section>
   );
+}
+
+type Preset = Pick<Agent, "id" | "name" | "description" | "job_role">;
+
+function AgentPresets({ onRestore }: { onRestore: (agent: Agent) => void }) {
+  const [presets, setPresets] = useState<Preset[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    workspaceRequest<Preset[]>("agents/presets", { signal: controller.signal })
+      .then(setPresets).catch((err) => { if (!controller.signal.aborted) setError(err.message); });
+    return () => controller.abort();
+  }, []);
+  async function restore(id: string) {
+    setBusy(true); setError("");
+    try { onRestore(await workspaceRequest<Agent>(`agents/presets/${id}`, { method: "POST" })); }
+    catch (err) { setError(err instanceof Error ? err.message : "Preset non disponibile."); }
+    finally { setBusy(false); }
+  }
+  return <section className="space-y-3 p-5" aria-label="Preset agenti">
+    <h3 className="text-xl font-semibold">Preset disponibili</h3>
+    {!presets && !error && <p role="status">Caricamento…</p>}
+    {presets?.length === 0 && <p className="text-sm text-nathion-muted">Tutti i preset sono già attivi.</p>}
+    {presets?.map((preset) => <article key={preset.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-nathion-border p-3">
+      <div><h4>{preset.name}</h4><p className="text-sm text-sky-200">{preset.job_role}</p><p className="text-xs text-nathion-muted">{preset.description}</p></div>
+      <button type="button" className={button} disabled={busy} onClick={() => void restore(preset.id)}>Aggiungi preset</button>
+    </article>)}
+    {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+  </section>;
 }
 
 function NewAgent({ onCreated, onCancel }: { onCreated: (agent: Agent) => void; onCancel: () => void }) {
@@ -183,7 +222,8 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
   }
 
   function removeAgent() {
-    if (!window.confirm(`Eliminare «${agent.name}» con tutte le sue skill e i documenti?`)) return;
+    const restoreInfo = agent.custom ? "" : " Potrai aggiungerlo di nuovo dai preset con la configurazione iniziale.";
+    if (!window.confirm(`Eliminare «${agent.name}», le personalizzazioni e i documenti?${restoreInfo}`)) return;
     void change(async () => {
       await workspaceRequest(path, { method: "DELETE" });
       onDeleted(agent.id);
@@ -199,7 +239,8 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
     <div className="min-w-0 space-y-6 p-4 sm:p-6">
       <header>
         <h3 className="text-xl font-semibold">{agent.name}</h3>
-        <p className="mt-1 text-sm font-medium text-violet-200">{agent.job_role || "Agente personale"}</p>
+        <p className="mt-1 text-sm font-medium text-violet-200">{agent.job_role || "Ruolo da definire"}</p>
+        {agent.custom && <span className="mt-1 inline-block rounded bg-violet-400/15 px-1.5 text-xs text-violet-200">Personale</span>}
         <p className="mt-1 line-clamp-2 break-words text-sm text-nathion-muted">{agent.description}</p>
       </header>
 
@@ -269,7 +310,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
           </div>
         ))}
       </section>
-      {agent.custom && tab === "Profilo" && <button type="button" className="text-left text-sm text-red-300" disabled={busy} onClick={removeAgent}>Elimina agente personale</button>}
+      {tab === "Profilo" && <button type="button" className="text-left text-sm text-red-300" disabled={busy} onClick={removeAgent}>Elimina agente</button>}
       {busy && <p role="status" className="text-sm text-sky-200">Operazione in corso…</p>}
       {notice && <p role="status" className="text-sm text-sky-200">{notice}</p>}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}

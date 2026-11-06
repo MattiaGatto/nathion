@@ -80,6 +80,8 @@ async def propose(gateway, db, body, instructions, data, schema):
 @router.post("/plans")
 async def make_plan(body: PlanIn, db: Session = Depends(get_db), gateway: LLMGateway = Depends(get_gateway)):
     agents = load_agents(db)
+    if not agents:
+        raise HTTPException(422, "Aggiungi o ripristina un agente prima di creare un piano")
     descriptions = [{"id": item.id, "name": item.name, "description": item.description.splitlines()[0][:240], "tools": item.tools}
                     for item in agents.values()]
     value = await propose(gateway, db, body,

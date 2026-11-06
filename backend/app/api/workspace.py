@@ -22,7 +22,7 @@ from app.llm.gateway import LLMGateway, get_gateway
 from app.core.preferences import default_provider
 from app.memory import index_memory, retrieve_context
 from app.core.config import get_settings
-from app.runtime import (AgentIdentity, AgentPatch, MemoryIn, RunIn, Task, VoiceTurn, discover_skills, execute_run,
+from app.runtime import (AGENTS, AgentIdentity, AgentPatch, MemoryIn, RunIn, Task, VoiceTurn, discover_skills, execute_run,
                          fingerprint, retrieve, load_agents, resolve_voice_agent, spoken_words)
 
 from app.agent_documents import MAX_BYTES, MAX_DOCUMENTS, document_info, document_prefix, documents, extract_text
@@ -81,16 +81,47 @@ async def configure_agent(agent_id: str, body: AgentPatch, db: Session = Depends
     return load_agents(db)[agent_id]
 
 
+@router.get("/agents/presets")
+def agent_presets(db: Session = Depends(get_db)):
+    active = load_agents(db)
+    return [{"id": agent.id, "name": agent.name, "job_role": agent.job_role, "description": agent.description}
+            for agent in AGENTS.values() if agent.id not in active]
+
+
+@router.post("/agents/presets/{agent_id}", status_code=201)
+async def restore_agent_preset(agent_id: str, db: Session = Depends(get_db)):
+    preset = AGENTS.get(agent_id)
+    if not preset:
+        raise HTTPException(404, "Preset non trovato")
+    active = load_agents(db)
+    if agent_id in active:
+        raise HTTPException(409, "Questo agente è già attivo")
+    unique_agent_name(active, preset.name)
+    key = preference_key(f"agent:{agent_id}")
+    setting = db.get(AppSettings, key)
+    if setting:
+        setting.value = '{"enabled": true}'
+    else:
+        db.add(AppSettings(key=key, value='{"enabled": true}'))
+    db.commit()
+    return load_agents(db)[agent_id]
+
+
 @router.delete("/agents/{agent_id}", status_code=204)
 async def delete_agent(agent_id: str, db: Session = Depends(get_db)):
     agent = load_agents(db).get(agent_id)
     if not agent:
         raise HTTPException(404, "Agente non trovato")
-    if not agent.custom:
-        raise HTTPException(422, "Gli agenti integrati non si possono eliminare")
     for document in documents(db, agent_id):
         db.delete(document)
-    db.delete(db.get(AppSettings, preference_key(f"agent:{agent_id}")))
+    key = preference_key(f"agent:{agent_id}")
+    setting = db.get(AppSettings, key)
+    if agent.custom:
+        db.delete(setting)
+    elif setting:
+        setting.value = '{"deleted": true}'
+    else:
+        db.add(AppSettings(key=key, value='{"deleted": true}'))
     db.commit()
 
 

@@ -22,6 +22,7 @@ function Application() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [bootError, setBootError] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [agentRevision, setAgentRevision] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
 
@@ -170,12 +171,13 @@ function Application() {
           </div>
         </header>
         {profileOpen && <ProfilePanel onClose={() => setProfileOpen(false)} onSaved={setProfile} />}
-        {workspaceOpen && <WorkspacePanel model={model} onClose={() => setWorkspaceOpen(false)} />}
+        {workspaceOpen && <WorkspacePanel model={model} onClose={() => { setWorkspaceOpen(false); setAgentRevision((revision) => revision + 1); }} />}
         {account?.role !== "admin" && !account?.hosted_access && <p role="status" className="px-4 py-2 text-sm text-amber-300">Il tuo spazio è attivo. L’uso dei modelli di questo PC attende l’approvazione dell’amministratore.</p>}
         {activeId && (
           <ChatWindow
             key={activeId}
             conversationId={activeId}
+            agentRevision={agentRevision}
             model={model}
             onConversationUpdated={refreshConversations}
             onOpenSettings={() => { stopAllAudio(); setSettingsOpen(true); }}

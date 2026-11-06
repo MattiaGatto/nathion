@@ -253,3 +253,78 @@
 .profile-markdown a { color: #aee9fb; text-decoration: underline; }
 .profile-markdown pre { overflow-x: auto; padding: .6rem; border-radius: .4rem; background: #0a1420; }
 .profile-markdown code { color: #c3f4e6; }
+
+.agent-orbit {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100%, 21rem);
+  aspect-ratio: 1;
+  isolation: isolate;
+}
+
+.agent-orbit::before {
+  content: "";
+  position: absolute;
+  inset: 11%;
+  border-radius: 50%;
+  border: 1px dashed rgb(132 218 255 / 35%);
+  box-shadow: 0 0 20px rgb(71 185 255 / 10%);
+  pointer-events: none;
+}
+
+.agent-orbit > .voice-orb {
+  width: min(44%, 9rem);
+}
+
+.agent-orbit__agent {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: .18rem;
+  width: 3.65rem;
+  min-height: 2.9rem;
+  transform: translate(-50%, -50%);
+  color: #bcecff;
+}
+
+.agent-orbit__agent[data-personal] {
+  color: #e4ceff;
+}
+
+.agent-orbit__badge {
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  aspect-ratio: 1;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: #111d31;
+  box-shadow: 0 0 11px color-mix(in srgb, currentColor 25%, transparent);
+  font: 700 .69rem ui-monospace, monospace;
+}
+
+.agent-orbit__name {
+  width: 100%;
+  overflow: hidden;
+  padding-inline: .2rem;
+  border-radius: .3rem;
+  background: #0a1423;
+  font-size: .65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-orbit__agent:hover:not(:disabled) .agent-orbit__badge {
+  background: #254164;
+}
+
+.agent-orbit__agent:focus-visible {
+  border-radius: .4rem;
+  outline: 2px solid currentColor;
+}
+
+.agent-orbit__agent:disabled {
+  opacity: .55;
+}
