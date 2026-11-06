@@ -2,7 +2,7 @@
 
 ## APK per il PC di Mattia
 
-Il file firmato NATHION 1.1 si trova in `android/build/NATHION.apk`. Puoi installarlo sopra la versione 1.0 per mantenere il server memorizzato. Copialo sul telefono
+Il file firmato NATHION 1.2 si trova in `android/build/NATHION.apk`. Puoi installarlo sopra la versione già installata per mantenere il server memorizzato. Copialo sul telefono
 via USB o attraverso un canale privato. Aprilo dal gestore file di Android e
 consenti al gestore di installare l'app se Android lo richiede.
 

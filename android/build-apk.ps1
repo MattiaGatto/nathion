@@ -1,4 +1,4 @@
-param([int]$VersionCode = 2)
+param([int]$VersionCode = 3)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $tools = Join-Path $PSScriptRoot '.tools'
@@ -14,6 +14,7 @@ $signing = Join-Path $PSScriptRoot '.signing'
 [IO.Directory]::CreateDirectory((Join-Path $build 'dex')) | Out-Null
 [IO.Directory]::CreateDirectory((Join-Path $build 'res/drawable')) | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo 'frontend/public/icon-192.png') -Destination (Join-Path $build 'res/drawable/nathion.png')
+Copy-Item -Path (Join-Path $PSScriptRoot 'res/*') -Destination (Join-Path $build 'res') -Recurse -Force
 $manifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'AndroidManifest.xml')) -replace 'android:versionCode="[0-9]+"', "android:versionCode=`"$VersionCode`""
 $tls = Join-Path $signing 'tls'
 if ((Test-Path (Join-Path $tls 'ca.crt')) -and (Test-Path (Join-Path $tls 'hostname.txt'))) {
