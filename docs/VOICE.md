@@ -12,6 +12,18 @@ python scripts/setup_voice.py
 Lo script scarica Whisper Tiny e Piper Paola italiano, salva revisioni e
 checksum in `models/manifest.json` e verifica gli SHA-256 LFS pubblicati.
 È possibile scegliere `--size base` o `--size small` per Whisper.
+
+Per riprodurre la configurazione attuale del PC di Mattia:
+
+```powershell
+python scripts/setup_voice.py --size small --separate-whisper --include-ugo
+```
+
+Imposta `NATHION_WHISPER_MODEL_PATH=/models/whisper-small` in `.env` e
+ricrea il backend Docker. Nella console vocale Ugo diventa la scelta iniziale
+quando è installato. Paola e Riccardo sono disponibili nelle opzioni vocali.
+[Ugo Medium di Einrich99, CC BY 4.0](https://huggingface.co/Einrich99/PiperTTS-UGO-Italian).
+
 I file prodotti nella directory `models/` del repository sono:
 
 - `whisper/`: un modello CTranslate2 completo compatibile con faster-whisper.

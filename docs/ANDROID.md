@@ -34,10 +34,9 @@ In **Agenti → Studio → Documenti** puoi allegare un file dal selettore Andro
 in cui salvare il file. Il menu **Connessione PC** permette di ricaricare o
 cambiare il server.
 
-Sul PC di Mattia è attivo Whisper Base. In un confronto sulla stessa frase
-sintetica ha riconosciuto il testo corretto. Per prepararlo su un'altra
-installazione usa `backend/scripts/setup_voice.py --size base --separate-whisper`
-con Python e imposta `NATHION_WHISPER_MODEL_PATH=/models/whisper-base`.
+Sul PC di Mattia sono attivi Whisper Small per la trascrizione e Piper Ugo
+Medium per la voce iniziale della console. Puoi scegliere Paola o Riccardo
+in **Opzioni vocali**. Vedi [Voce locale](VOICE.md) per i modelli e l’installazione.
 
 Il modello di chat predefinito sul PC di Mattia è `llama3.2:3b`. In una
 prova breve a modello già caricato il primo testo è arrivato in 0,08 s,

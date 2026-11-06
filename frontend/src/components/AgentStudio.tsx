@@ -203,7 +203,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
           <label className="text-sm">Modello<input className={input} value={model} onChange={(e) => setModel(e.target.value)} maxLength={200} placeholder="Usa il modello della chat" /></label>
           <label className="text-sm">Voce<select className={input} value={voice} onChange={(e) => setVoice(e.target.value)}>
             {!voices.includes(voice) && <option value={voice}>{voice} · Non disponibile</option>}
-            {voices.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile}</option>)}
+            {voices.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile === "ugo" ? "Ugo · qualità media" : profile}</option>)}
           </select></label>
         </div>
         <label className="flex items-center gap-2 text-sm">

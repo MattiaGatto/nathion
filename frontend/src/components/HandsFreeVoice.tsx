@@ -28,10 +28,11 @@ export function HandsFreeVoice(props: Props) {
   const [bargeIn, setBargeIn] = useState(false);
   const interruptible = useRef(false); interruptible.current = bargeIn;
   const [wakeEnabled, setWakeEnabled] = useState(true);
-  const [voiceProfile, setVoiceProfile] = useState("default");
+  const [voiceProfile, setVoiceProfile] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<string[]>(["default"]);
-  const selectedVoice = useRef(voiceProfile);
-  selectedVoice.current = voiceProfile;
+  const effectiveVoice = voiceProfile ?? (profiles.includes("ugo") ? "ugo" : "default");
+  const selectedVoice = useRef(effectiveVoice);
+  selectedVoice.current = effectiveVoice;
   const waitingForWake = useRef(false);
   const [threshold, setThreshold] = useState(0.018);
   const thresholdRef = useRef(threshold); thresholdRef.current = threshold;
@@ -40,8 +41,8 @@ export function HandsFreeVoice(props: Props) {
   const generation = useRef(0);
   const resources = useRef<{ input: MediaStream; context: AudioContext; capture: AudioWorkletNode } | null>(null);
   const controller = useRef<AbortController | null>(null);
-  const audio = useRef<HTMLAudioElement | null>(null);
-  const audioUrl = useRef("");
+  const outputContext = useRef<AudioContext | null>(null);
+  const audio = useRef<AudioBufferSourceNode | null>(null);
   const queue = useRef<string[]>([]);
   const playing = useRef(false);
   const expected = useRef(false);
@@ -63,17 +64,22 @@ export function HandsFreeVoice(props: Props) {
   function stopPlayback() {
     playbackGeneration.current++;
     controller.current?.abort(); controller.current = null;
-    if (audio.current) { audio.current.onended = null; audio.current.onerror = null; audio.current.pause(); }
-    audio.current = null;
-    if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
-    audioUrl.current = ""; queue.current = []; playing.current = false; agentVoice.current = null;
+    if (audio.current) {
+      audio.current.onended = null;
+      audio.current.stop();
+      audio.current.disconnect();
+      audio.current = null;
+    }
+    queue.current = []; playing.current = false; agentVoice.current = null;
   }
   function stop() {
     clearTimeout(idleTimeout.current);
     running.current = false; generation.current++; expected.current = false; cursor.current = 0;
     stopPlayback();
     const current = resources.current; resources.current = null;
-    if (current) { current.capture.port.onmessage = null; current.capture.disconnect(); current.input.getTracks().forEach((track) => track.stop()); void current.context.close().catch(() => {}); }
+    if (current) { current.capture.port.onmessage = null; current.capture.disconnect(); current.input.getTracks().forEach((track) => track.stop()); }
+    const context = outputContext.current; outputContext.current = null;
+    if (context) void context.close().catch(() => {});
     releaseAudio(owner.current); setActive(false); setStatus("");
     setAgentTurn((turn) => turn?.pending ? null : turn);
   }
@@ -102,17 +108,22 @@ export function HandsFreeVoice(props: Props) {
       const abort = new AbortController(); controller.current = abort;
       const blob = await api.speak(queue.current.shift()!, abort.signal, agentVoice.current?.profile ?? selectedVoice.current);
       if (!running.current || current !== playbackGeneration.current) return;
-      audioUrl.current = URL.createObjectURL(blob);
-      const player = new Audio(audioUrl.current); audio.current = player;
+      const context = outputContext.current;
+      if (!context || context.state !== "running") throw new Error("Audio sospeso. Tocca il microfono per riattivarlo.");
+      const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+      if (!running.current || current !== playbackGeneration.current) return;
+      const player = context.createBufferSource();
+      player.buffer = buffer;
+      player.connect(context.destination);
       player.onended = () => {
         if (current !== playbackGeneration.current) return;
-        if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
-        audioUrl.current = ""; audio.current = null; playing.current = false;
+        player.disconnect();
+        audio.current = null; playing.current = false;
         void playQueue();
       };
-      player.onerror = () => fail(new Error("Riproduzione vocale non riuscita"));
-      await player.play();
-      if (current === playbackGeneration.current) setStatus(`${agentVoice.current?.name ?? "NATHION"} parla · microfono attivo`);
+      player.start();
+      audio.current = player;
+      setStatus(`${agentVoice.current?.name ?? "NATHION"} parla · microfono attivo`);
     } catch (e) { if (running.current && current === playbackGeneration.current) fail(e); }
   }
 
@@ -165,14 +176,19 @@ export function HandsFreeVoice(props: Props) {
     let context: AudioContext | null = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) throw new Error("Usa un browser aggiornato su HTTPS o localhost.");
+      // Unlock output during the click, before permission and network awaits.
+      context = new AudioContext();
+      outputContext.current = context;
+      await context.resume();
+      if (!running.current || current !== generation.current) return;
       const availability = await api.voiceStatus();
       if (!availability.enabled || !availability.whisper_model_present || !availability.piper_model_present) throw new Error("Motore vocale non pronto. Controlla i modelli locali.");
       if (!running.current || current !== generation.current) return;
       setProfiles(availability.profiles);
       input = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
-      context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule("/voice-capture.js");
-      if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); await context.close(); return; }
+      await context.audioWorklet.addModule("/voice-capture.js");
+      if (!running.current || current !== generation.current) { input.getTracks().forEach((track) => track.stop()); return; }
       const source = context.createMediaStreamSource(input);
       const capture = new AudioWorkletNode(context, "nathion-capture");
       // Worklet output is silent; connecting it keeps capture processing live.
@@ -319,7 +335,7 @@ export function HandsFreeVoice(props: Props) {
       resetIdle();
       setStatus(waitingForWake.current ? "In attesa di «Ehi Nathion»…" : "Ti ascolto…");
     } catch (e) {
-      if (resources.current?.context !== context) { input?.getTracks().forEach((track) => track.stop()); void context?.close().catch(() => {}); }
+      if (resources.current?.context !== context) input?.getTracks().forEach((track) => track.stop());
       if (current === generation.current) fail(e);
     }
   }
@@ -333,7 +349,7 @@ export function HandsFreeVoice(props: Props) {
   }
 
   const phase = !active ? "idle"
-    : audio.current && !audio.current.paused ? "speaking"
+    : audio.current ? "speaking"
     : agentTurn?.pending || playing.current || (props.response && !props.response.done) || status === "Trascrizione locale…" ? "processing"
     : "listening";
   const signal = phase === "listening" ? Math.min(1, microphoneLevel / 0.14) : 0;
@@ -403,8 +419,8 @@ export function HandsFreeVoice(props: Props) {
         </label>
         <label className="block">
           Voce{" "}
-          <select className="rounded bg-nathion-panel p-1" value={voiceProfile} onChange={(e) => setVoiceProfile(e.target.value)}>
-            {profiles.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile}</option>)}
+          <select className="rounded bg-nathion-panel p-1" value={effectiveVoice} onChange={(e) => setVoiceProfile(e.target.value)}>
+            {profiles.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile === "ugo" ? "Ugo · qualità media" : profile}</option>)}
           </select>
         </label>
         <label className="block">

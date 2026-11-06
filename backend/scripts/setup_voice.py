@@ -15,6 +15,7 @@ def main() -> None:
     parser.add_argument("--size", choices=["tiny", "base", "small"], default="tiny")
     parser.add_argument("--include-second-voice", action="store_true")
     parser.add_argument("--separate-whisper", action="store_true", help="Download only Whisper into whisper-<size>.")
+    parser.add_argument("--include-ugo", action="store_true", help="Also download the Italian Ugo Medium voice.")
     args = parser.parse_args()
     models = ROOT / "models"
     models.mkdir(exist_ok=True)
@@ -39,6 +40,12 @@ def main() -> None:
             "it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx": "riccardo.onnx",
             "it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx.json": "riccardo.onnx.json",
             "it/it_IT/riccardo/x_low/MODEL_CARD": "RICCARDO_MODEL_CARD.txt",
+        }))
+    if args.include_ugo:
+        sources.append(("Einrich99/PiperTTS-UGO-Italian", {
+            "medium/it_IT-ugo-medium.onnx": "ugo.onnx",
+            "medium/it_IT-ugo-medium.onnx.json": "ugo.onnx.json",
+            "medium/MODEL_CARD": "UGO_MODEL_CARD.txt",
         }))
     for repo, files in sources:
         info = api.model_info(repo, files_metadata=True)

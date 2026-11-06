@@ -9,6 +9,6 @@ services:
       NATHION_WHISPER_MODEL_PATH: ${NATHION_WHISPER_MODEL_PATH:-/models/whisper}
       NATHION_PIPER_MODEL_PATH: /models/voice.onnx
       NATHION_VOICE_LANGUAGE: it
-      NATHION_VOICE_PROFILES: '{"riccardo":"/models/riccardo.onnx"}'
+      NATHION_VOICE_PROFILES: '{"riccardo":"/models/riccardo.onnx","ugo":"/models/ugo.onnx"}'
     volumes:
       - ./models:/models:ro
