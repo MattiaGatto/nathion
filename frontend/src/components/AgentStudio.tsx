@@ -17,6 +17,18 @@ export interface Agent {
   voice_profile: string;
 }
 
+const profileLimit = 32000;
+const skillLimit = 16000;
+const skillCount = 12;
+const documentCount = 24;
+const documentMB = 8;
+
+function CharacterCount({ value, limit }: { value: string; limit: number }) {
+  return <span className={`block text-right text-xs ${value.length > limit ? "text-red-300" : "text-nathion-muted"}`}>
+    {value.length.toLocaleString("it-IT")} / {limit.toLocaleString("it-IT")} caratteri
+  </span>;
+}
+
 const input = "mt-1 w-full rounded-lg border border-nathion-border bg-nathion-bg p-2.5 text-sm text-nathion-text";
 const button = "rounded-lg border border-sky-400/30 px-3 py-2 text-sm text-sky-200 hover:bg-sky-400/10 disabled:opacity-40";
 
@@ -85,9 +97,9 @@ function NewAgent({ onCreated, onCancel }: { onCreated: (agent: Agent) => void; 
     <h3 className="text-xl font-semibold text-violet-200">Crea un agente personale</h3>
     <p className="text-sm text-nathion-muted">Scegli un nome facile da pronunciare. Dopo la creazione puoi aggiungere skill e documenti.</p>
     <label className="block text-sm">Nome<input className={input} autoFocus required minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="Vega" /></label>
-    <label className="block text-sm">Ruolo<textarea className={input} required maxLength={300} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Assistente per i miei progetti di elettronica" /></label>
+    <label className="block text-sm">Profilo e istruzioni<textarea className={input} required rows={8} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Incolla qui il profilo completo dell’agente" /><CharacterCount value={description} limit={profileLimit} /></label>
     <div className="flex gap-3">
-      <button className={button} disabled={busy || name.trim().length < 2 || !description.trim()}>Crea agente</button>
+      <button className={button} disabled={busy || name.trim().length < 2 || !description.trim() || description.length > profileLimit}>Crea agente</button>
       <button type="button" className={button} disabled={busy} onClick={onCancel}>Annulla</button>
     </div>
     {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
@@ -148,7 +160,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
     if (!file) return;
     const form = event.currentTarget;
     void change(async () => {
-      if (file.size > 2 * 1024 * 1024) throw new Error("Il file supera 2 MB.");
+      if (file.size > documentMB * 1024 * 1024) throw new Error(`Il file supera ${documentMB} MB.`);
       const document = await workspaceRequest<Source>(`${path}/documents?name=${encodeURIComponent(file.name)}`,
         { method: "POST", body: file });
       setDocuments((previous) => [document, ...previous]);
@@ -183,7 +195,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
     <div className="min-w-0 space-y-6 p-4 sm:p-6">
       <header>
         <h3 className="text-xl font-semibold">{agent.name}</h3>
-        <p className="mt-1 text-sm text-nathion-muted">{agent.description}</p>
+        <p className="mt-1 line-clamp-2 break-words text-sm text-nathion-muted">{agent.description}</p>
       </header>
 
       <p className="rounded-lg border border-violet-400/25 bg-violet-400/10 p-3 text-sm text-violet-200">
@@ -197,7 +209,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
         <div className={tab === "Profilo" ? "space-y-4" : "hidden"}>
         {agent.custom && <div className="grid gap-3">
           <label className="text-sm">Nome<input className={input} required={tab === "Profilo"} minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} /></label>
-          <label className="text-sm">Ruolo<textarea className={input} required={tab === "Profilo"} rows={2} maxLength={300} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+          <label className="text-sm">Profilo e istruzioni<textarea className={input} required={tab === "Profilo"} rows={8} value={description} onChange={(e) => setDescription(e.target.value)} /><CharacterCount value={description} limit={profileLimit} /></label>
         </div>}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm">Modello<input className={input} value={model} onChange={(e) => setModel(e.target.value)} maxLength={200} placeholder="Usa il modello della chat" /></label>
@@ -214,30 +226,30 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
         <section className={tab === "Skill" ? "space-y-3 rounded-xl border border-nathion-border p-4" : "hidden"} aria-label="Skill">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="font-medium">Skill operative</h4>
-            <button type="button" className={button} disabled={busy || skills.length >= 3}
+            <button type="button" className={button} disabled={busy || skills.length >= skillCount}
               onClick={() => setSkills([...skills, { name: "", instructions: "" }])}>Aggiungi skill</button>
           </div>
-          <p className="text-sm text-nathion-muted">Definisci metodo, criteri e formato della risposta. Puoi salvare fino a tre skill personali.</p>
+          <p className="text-sm text-nathion-muted">Definisci metodo, criteri e formato della risposta. Puoi salvare fino a {skillCount} skill personali.</p>
           {agent.skills.length > 0 && <div className="flex flex-wrap gap-2">{agent.skills.map((skill) =>
             <span key={skill} className="rounded-full bg-sky-400/10 px-2.5 py-1 font-mono text-xs text-sky-200">{skill} · integrata</span>)}</div>}
           {skills.map((skill, index) => <fieldset key={index} className="space-y-2 rounded-lg bg-nathion-surface p-3">
             <legend className="px-1 text-xs text-sky-200">Skill {index + 1}</legend>
             <label className="block text-sm">Nome<input className={input} value={skill.name} maxLength={80} required={tab === "Skill"} onChange={(e) => editSkill(index, "name", e.target.value)} /></label>
-            <label className="block text-sm">Istruzioni<textarea className={input} value={skill.instructions} rows={3} maxLength={1400} required={tab === "Skill"} onChange={(e) => editSkill(index, "instructions", e.target.value)} placeholder="Per esempio, chiudi ogni revisione con tre prossimi passi." /></label>
+            <label className="block text-sm">Istruzioni<textarea className={input} value={skill.instructions} rows={6} required={tab === "Skill"} onChange={(e) => editSkill(index, "instructions", e.target.value)} placeholder="Per esempio, chiudi ogni revisione con tre prossimi passi." /><CharacterCount value={skill.instructions} limit={skillLimit} /></label>
             <button type="button" className="text-xs text-red-300" disabled={busy} onClick={() => setSkills(skills.filter((_, i) => i !== index))}>Rimuovi skill</button>
           </fieldset>)}
         </section>
-        <button className={button} disabled={busy || (tab === "Skill" && skills.some((skill) => !skill.name.trim() || !skill.instructions.trim()))}>{tab === "Skill" ? "Salva skill" : "Salva profilo agente"}</button>
+        <button className={button} disabled={busy || (tab === "Profilo" && description.length > profileLimit) || (tab === "Skill" && skills.some((skill) => !skill.name.trim() || !skill.instructions.trim() || skill.instructions.length > skillLimit))}>{tab === "Skill" ? "Salva skill" : "Salva profilo agente"}</button>
       </form>
 
       <section className={tab === "Documenti" ? "space-y-3" : "hidden"} aria-label="Memoria documentale">
         <h4 className="font-medium">Memoria documentale</h4>
-        <p className="text-sm text-nathion-muted">PDF con testo, DOCX, TXT, Markdown e CSV. Fino a 12 file da 2 MB per agente. Gli estratti vengono passati al modello scelto per l’attività.</p>
+        <p className="text-sm text-nathion-muted">PDF con testo, DOCX, TXT, Markdown e CSV. Fino a {documentCount} file da {documentMB} MB per agente. Gli estratti vengono passati al modello scelto per l’attività.</p>
         {agent.memory_access === "none" && <p className="text-sm text-amber-200">L’agente può conservare i documenti. Riattiva la memoria per usarli nelle attività.</p>}
         <form onSubmit={upload} className="flex flex-wrap items-center gap-2">
           <input aria-label="Documento da allegare" type="file" accept=".pdf,.docx,.txt,.md,.csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="max-w-full min-w-0 text-xs file:mr-2 file:rounded-md file:border-0 file:bg-sky-400/10 file:px-2 file:py-1.5 file:text-sky-200" />
-          <button className={button} disabled={busy || !file || documents.length >= 12}>Allega documento</button>
+          <button className={button} disabled={busy || !file || documents.length >= documentCount}>Allega documento</button>
         </form>
         {documents.length === 0 && <p className="text-sm text-nathion-muted">Nessuna fonte allegata.</p>}
         {documents.map((source) => (

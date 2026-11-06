@@ -53,4 +53,4 @@ async def serve():
             raise
         except Exception as exc:
             logger.warning("Scheduled workflow failed: %s", type(exc).__name__)
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)

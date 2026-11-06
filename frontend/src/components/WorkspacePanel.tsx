@@ -13,6 +13,21 @@ interface RemoteTool { name: string; description?: string; input_schema: Record<
 interface ScheduleItem { id: string; prompt: string; model: string; next_run_at: string; repeat_seconds: number; enabled: boolean; last_status: string; }
 interface Props { model: string | null; onClose: () => void; }
 
+const scheduleMaxSeconds = 30 * 86400;
+const scheduleUnits = [
+  { seconds: 1, label: "secondi" },
+  { seconds: 60, label: "minuti" },
+  { seconds: 3600, label: "ore" },
+  { seconds: 86400, label: "giorni" },
+  { seconds: 604800, label: "settimane" },
+];
+
+function recurrence(seconds: number) {
+  if (!seconds) return "Una volta";
+  const unit = [...scheduleUnits].reverse().find((item) => seconds % item.seconds === 0) ?? scheduleUnits[0];
+  return `Ogni ${seconds / unit.seconds} ${unit.label}`;
+}
+
 export function WorkspacePanel({ model, onClose }: Props) {
   const account = useAccount();
   const admin = account?.role === "admin";
@@ -45,7 +60,11 @@ export function WorkspacePanel({ model, onClose }: Props) {
   const [schedulePrompt, setSchedulePrompt] = useState("");
   const [scheduleModel, setScheduleModel] = useState(model ?? "");
   const [scheduleWhen, setScheduleWhen] = useState("");
-  const [scheduleInterval, setScheduleInterval] = useState(0);
+  const [scheduleUnit, setScheduleUnit] = useState(0);
+  const [scheduleQuantity, setScheduleQuantity] = useState("1");
+  const scheduleInterval = scheduleUnit ? Number(scheduleQuantity) * scheduleUnit : 0;
+  const validScheduleInterval = !scheduleUnit || (Number.isSafeInteger(Number(scheduleQuantity)) &&
+    scheduleInterval >= scheduleUnit && scheduleInterval <= scheduleMaxSeconds);
   const [decidingAction, setDecidingAction] = useState<string | null>(null);
   useEffect(() => { api.voiceStatus().then((status) => setVoiceProfiles(status.profiles)).catch(() => {}); }, []);
   useEffect(() => { if (!admin) return; workspaceRequest<{ id: string; servers?: string[] }[]>("tools").then((tools) => setMcpServers(tools.find((tool) => tool.id === "mcp")?.servers ?? [])).catch(() => {}); }, []);
@@ -75,7 +94,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
     finally { setBusy(false); }
   }
   async function execute(usePlan = false) {
-    if (!runModel || !prompt.trim() || (targetAgent && prompt.length > 8000)) return;
+    if (!runModel || !prompt.trim() || prompt.length > 24000) return;
     setError(""); setBusy(true);
     try {
       const completed = await workspaceRequest<Run>("runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model: runModel, ...(usePlan ? { tasks: planned } : targetAgent ? { tasks: [{ id: "direct", agent_id: targetAgent, instruction: prompt }] } : {}) }) });
@@ -151,6 +170,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
     } catch (e) { setError(e instanceof Error ? e.message : "Argomenti non validi"); }
   }
   async function addSchedule() {
+    if (!validScheduleInterval) return;
     try {
       await workspaceRequest("schedules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: schedulePrompt, model: scheduleModel, next_run_at: new Date(scheduleWhen).toISOString(), repeat_seconds: scheduleInterval }) });
       setSchedulePrompt(""); await reload();
@@ -279,10 +299,10 @@ export function WorkspacePanel({ model, onClose }: Props) {
             {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
           </select>
         </label>
-        <textarea aria-label="Obiettivo attività" className="w-full rounded-xl bg-nathion-panel p-3" value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={targetAgent ? 8000 : 12000} />
-        {targetAgent && prompt.length > 8000 && <p className="text-xs text-amber-200">Riduci l’obiettivo a 8.000 caratteri per assegnarlo a un singolo agente.</p>}
-        <button className={button} disabled={busy || !runModel || !prompt.trim() || Boolean(targetAgent && prompt.length > 8000)} onClick={() => execute()}>{busy ? "Attività in corso…" : "Avvia attività"}</button>
-        <button className={button} disabled={busy || !model || !prompt.trim() || Boolean(targetAgent)} onClick={previewPlan}>Proponi piano con il modello</button>
+        <textarea aria-label="Obiettivo attività" className="w-full rounded-xl bg-nathion-panel p-3" value={prompt} onChange={(e) => setPrompt(e.target.value)}  />
+        {prompt.length > 24000 && <p className="text-xs text-amber-200">Il limite per un’attività è di 24.000 caratteri.</p>}
+        <button className={button} disabled={busy || !runModel || !prompt.trim() || prompt.length > 24000} onClick={() => execute()}>{busy ? "Attività in corso…" : "Avvia attività"}</button>
+        <button className={button} disabled={busy || !model || !prompt.trim() || prompt.length > 24000 || Boolean(targetAgent)} onClick={previewPlan}>Proponi piano con il modello</button>
         {planned && plannedPrompt === prompt && <div className="space-y-2 rounded-xl border border-nathion-border p-3"><p className="text-sm">Piano proposto: controlla agenti, istruzioni, strumenti e dipendenze prima di avviare. Puoi modificarlo.</p><PlanEditor tasks={planned} agents={agents} onChange={setPlanned} /><button className={button} disabled={busy} onClick={() => execute(true)}>Approva piano e avvia</button><button className={button} onClick={() => setPlanned(null)}>Scarta piano</button></div>}
         {lastRun && <article className="space-y-2 rounded-xl border border-nathion-border p-4">
           <h3>Ultima attività · {label(lastRun.status)}</h3>
@@ -294,7 +314,7 @@ export function WorkspacePanel({ model, onClose }: Props) {
         <p className="text-xs text-nathion-muted">{memoryStatus.model ? `Ricerca ibrida: ${memoryStatus.indexed} informazioni indicizzate su ${memoryStatus.total}. In caso di indisponibilità del modello viene usata la ricerca per parole.` : "Ricerca per parole. Nessun modello semantico configurato."}</p>
         {memoryStatus.model && memoryStatus.indexed < memoryStatus.total && <button className={button} disabled={busy} onClick={reindex}>Indicizza informazioni mancanti</button>}
         <div className="flex gap-2"><input aria-label="Cerca nella memoria" className="min-w-0 flex-1 rounded-lg bg-nathion-panel p-3" value={search} onChange={(e) => setSearch(e.target.value)} /><button className={button} onClick={findMemory}>Cerca</button></div>
-        <textarea aria-label="Nuova memoria" className="w-full rounded-xl bg-nathion-panel p-3" value={note} onChange={(e) => setNote(e.target.value)} maxLength={8000} />
+        <textarea aria-label="Nuova memoria" className="w-full rounded-xl bg-nathion-panel p-3" value={note} onChange={(e) => setNote(e.target.value)} maxLength={24000} />
         <select aria-label="Categoria memoria" className="bg-nathion-panel p-2" value={category} onChange={(e) => setCategory(e.target.value)}><option value="project">Progetto</option><option value="profile">Preferenza personale</option><option value="semantic">Conoscenza</option><option value="episodic">Evento</option></select>{" "}
         <button className={button} disabled={!note.trim()} onClick={remember}>Salva memoria</button>
         {memories.map((m) => <article key={m.id} className="rounded-xl border border-nathion-border p-4"><p className="whitespace-pre-wrap">{m.content}</p><p className="mt-1 text-xs text-nathion-muted">{m.category} · {m.source} · {m.certainty}</p>{m.certainty === "inference" && <button className={button} onClick={() => confirmMemory(m)}>Conferma come fatto</button>}{" "}<button className={button} onClick={() => editMemory(m)}>Modifica</button>{" "}<button className={button} onClick={() => forget(m.id)}>Elimina</button></article>)}
@@ -305,7 +325,19 @@ export function WorkspacePanel({ model, onClose }: Props) {
         {!actions.some((a) => a.status === "pending") && <p className="text-sm text-nathion-muted">Nessuna operazione in attesa.</p>}
         {actions.filter((a) => a.status !== "pending").slice(0, 10).map((a) => <article key={a.id} className="rounded-lg border border-nathion-border p-3"><p className="text-sm">{a.tool === "mcp" ? `${JSON.parse(a.payload).server} · ${JSON.parse(a.payload).tool}` : "Operazione sulla memoria"} · {label(a.status)}</p>{a.result && <p className="mt-2 whitespace-pre-wrap text-sm">{JSON.parse(a.result).text ?? JSON.parse(a.result).detail ?? "Operazione conclusa."}</p>}{a.result && JSON.parse(a.result).truncated && <p className="text-xs text-nathion-muted">Risultato abbreviato al limite di visualizzazione.</p>}<button className={button} disabled={a.status === "executing"} onClick={() => eraseAction(a.id)}>Elimina registrazione</button></article>)}
       </section>}
-      {admin && section === "Automazioni" && <section className="space-y-3"><h2 className="text-lg">Attività programmate</h2><p className="text-sm text-nathion-muted">Eseguite con Ollama sul PC acceso, senza shell o chiamate MCP automatiche. I risultati compaiono nella timeline. La pausa ferma le esecuzioni future.</p><textarea aria-label="Obiettivo programmato" className="w-full rounded bg-nathion-panel p-3" maxLength={12000} value={schedulePrompt} onChange={(e) => setSchedulePrompt(e.target.value)} /><div className="flex flex-wrap gap-3"><label className="text-xs">Modello Ollama locale<input aria-label="Modello programmazione" className="ml-2 rounded bg-nathion-panel p-2" value={scheduleModel} onChange={(e) => setScheduleModel(e.target.value)} /></label><input aria-label="Data e ora locale" className="rounded bg-nathion-panel p-2" type="datetime-local" value={scheduleWhen} onChange={(e) => setScheduleWhen(e.target.value)} /><select aria-label="Ripetizione" className="rounded bg-nathion-panel p-2" value={scheduleInterval} onChange={(e) => setScheduleInterval(Number(e.target.value))}><option value={0}>Una volta</option><option value={3600}>Ogni ora</option><option value={86400}>Ogni 24 ore</option><option value={604800}>Ogni 7 giorni</option></select><button className={button} disabled={!schedulePrompt.trim() || !scheduleWhen || !scheduleModel.trim()} onClick={addSchedule}>Programma</button></div>{schedules.map((job) => <article key={job.id} className="rounded-xl border border-nathion-border p-4"><p>{job.prompt}</p><p className="my-2 text-xs text-nathion-muted">{new Date(job.next_run_at).toLocaleString("it-IT")} · {job.enabled ? "Attiva" : "In pausa / conclusa"} · Ultimo esito: {job.last_status}</p><button className={button} onClick={() => toggleSchedule(job)}>{job.enabled ? "Metti in pausa" : "Riattiva"}</button>{" "}<button className={button} onClick={() => removeSchedule(job.id)}>Elimina programmazione</button></article>)}</section>}
+      {admin && section === "Automazioni" && <section className="space-y-3"><h2 className="text-lg">Attività programmate</h2><p className="text-sm text-nathion-muted">Eseguite con Ollama sul PC acceso, senza shell o chiamate MCP automatiche. I risultati compaiono nella timeline. Intervallo massimo 30 giorni. Le esecuzioni sono sequenziali. La pausa ferma quelle future.</p><textarea aria-label="Obiettivo programmato" className="w-full rounded bg-nathion-panel p-3" maxLength={24000} value={schedulePrompt} onChange={(e) => setSchedulePrompt(e.target.value)} /><div className="flex flex-wrap gap-3"><label className="text-xs">Modello Ollama locale<input aria-label="Modello programmazione" className="ml-2 rounded bg-nathion-panel p-2" value={scheduleModel} onChange={(e) => setScheduleModel(e.target.value)} /></label><input aria-label="Data e ora locale" className="rounded bg-nathion-panel p-2" type="datetime-local" step={1} value={scheduleWhen} onChange={(e) => setScheduleWhen(e.target.value)} /><label className="text-xs">Ripetizione
+        <select aria-label="Unità della ripetizione" className="ml-2 rounded bg-nathion-panel p-2" value={scheduleUnit}
+          onChange={(e) => setScheduleUnit(Number(e.target.value))}>
+          <option value={0}>Una volta</option>
+          {scheduleUnits.map((unit) => <option key={unit.seconds} value={unit.seconds}>Ogni … {unit.label}</option>)}
+        </select></label>
+        {scheduleUnit > 0 && <label className="text-xs">Quantità
+          <input aria-label="Quantità della ripetizione" className="ml-2 w-24 rounded bg-nathion-panel p-2"
+            type="number" min={1} max={Math.floor(scheduleMaxSeconds / scheduleUnit)} step={1} value={scheduleQuantity}
+            onChange={(e) => setScheduleQuantity(e.target.value)} />
+        </label>}
+        {!validScheduleInterval && <p role="alert" className="text-xs text-amber-200">Inserisci un intervallo intero fino a 30 giorni.</p>}
+        <button className={button} disabled={!schedulePrompt.trim() || !scheduleWhen || !scheduleModel.trim() || !validScheduleInterval} onClick={addSchedule}>Programma</button></div>{schedules.map((job) => <article key={job.id} className="rounded-xl border border-nathion-border p-4"><p>{job.prompt}</p><p className="my-2 text-xs text-nathion-muted">{new Date(job.next_run_at).toLocaleString("it-IT")} · {job.enabled ? "Attiva" : "In pausa / conclusa"} · {recurrence(job.repeat_seconds)} · Ultimo esito: {job.last_status}</p><button className={button} onClick={() => toggleSchedule(job)}>{job.enabled ? "Metti in pausa" : "Riattiva"}</button>{" "}<button className={button} onClick={() => removeSchedule(job.id)}>Elimina programmazione</button></article>)}</section>}
       {admin && section === "Connessioni" && <section className="space-y-3"><h2 className="text-lg">Connessioni MCP</h2>{mcpServers.length === 0 ? <p className="text-sm text-nathion-muted">Nessun server configurato dal proprietario. Nessuna connessione esterna attiva.</p> : <><select aria-label="Server MCP" className="rounded bg-nathion-panel p-2" value={mcpServer} onChange={(e) => discoverRemote(e.target.value)}><option value="">Seleziona server</option>{mcpServers.map((server) => <option key={server}>{server}</option>)}</select>{" "}<select aria-label="Strumento MCP" className="rounded bg-nathion-panel p-2" value={remoteTool} onChange={(e) => setRemoteTool(e.target.value)}>{remoteTools.map((tool) => <option key={tool.name}>{tool.name}</option>)}</select><p className="text-sm">{remoteTools.find((tool) => tool.name === remoteTool)?.description}</p><textarea aria-label="Argomenti JSON strumento MCP" className="w-full rounded bg-nathion-panel p-3 font-mono text-sm" maxLength={16000} value={remoteArguments} onChange={(e) => setRemoteArguments(e.target.value)} /><button className={button} disabled={!remoteTool} onClick={prepareRemote}>Prepara richiesta da approvare</button></>}</section>}
     </div>
   </section>;

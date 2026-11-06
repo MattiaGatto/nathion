@@ -12,10 +12,10 @@ router = APIRouter(prefix="/api/schedules", tags=["schedules"])
 
 
 class ScheduleIn(BaseModel):
-    prompt: str = Field(min_length=1, max_length=12000)
+    prompt: str = Field(min_length=1, max_length=24000)
     model: str = Field(min_length=1, max_length=200)
     next_run_at: datetime
-    repeat_seconds: int = Field(default=0, ge=0, le=31536000)
+    repeat_seconds: int = Field(default=0, ge=0, le=30 * 24 * 60 * 60)
 
     @field_validator("next_run_at")
     @classmethod
@@ -23,13 +23,6 @@ class ScheduleIn(BaseModel):
         if value.tzinfo is None:
             raise ValueError("Specifica il fuso orario")
         return value.astimezone(timezone.utc)
-
-    @field_validator("repeat_seconds")
-    @classmethod
-    def minimum_interval(cls, value):
-        if 0 < value < 60:
-            raise ValueError("Intervallo minimo sessanta secondi")
-        return value
 
 
 class ActiveIn(BaseModel):

@@ -19,7 +19,7 @@ def task_schema(agent):
         "required": ["id", "agent_id", "instruction", "depends_on", "tool"], "properties": {
             "id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{1,40}$"},
             "agent_id": {"type": "string", "enum": [agent.id]},
-            "instruction": {"type": "string", "minLength": 1, "maxLength": 180},
+            "instruction": {"type": "string", "minLength": 1, "maxLength": 1000},
             "depends_on": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
             "tool": {"anyOf": [{"type": "string", "enum": agent.tools}, {"type": "null"}]} if agent.tools else {"type": "null"}
         }}
@@ -46,7 +46,7 @@ class ProposalIn(BaseModel):
 
 
 class PlanIn(ProposalIn):
-    prompt: str = Field(min_length=1, max_length=12000)
+    prompt: str = Field(min_length=1, max_length=24000)
 
 
 def json_object(text):
@@ -80,19 +80,19 @@ async def propose(gateway, db, body, instructions, data, schema):
 @router.post("/plans")
 async def make_plan(body: PlanIn, db: Session = Depends(get_db), gateway: LLMGateway = Depends(get_gateway)):
     agents = load_agents(db)
-    descriptions = [{"id": item.id, "name": item.name, "description": item.description, "tools": item.tools}
+    descriptions = [{"id": item.id, "name": item.name, "description": item.description.splitlines()[0][:240], "tools": item.tools}
                     for item in agents.values()]
     value = await propose(gateway, db, body,
         'Progetta da 1 a 3 task. Formato {"tasks":[{"id":"step1","agent_id":"general","instruction":"testo breve","depends_on":[],"tool":null}]}. '
         'Usa solo gli agenti e tool forniti. Per calculator instruction deve essere solo espressione numerica; per clock testo breve. '
-        'Dipendenze acicliche, ID unici, istruzioni massimo 180 caratteri. Preferisci un task per richieste semplici.',
+        'Dipendenze acicliche, ID unici, istruzioni massimo 1000 caratteri. Preferisci un task per richieste semplici.',
         {"request": body.prompt, "agents": descriptions}, plan_schema(agents))
     try:
         if set(value) != {"tasks"} or not isinstance(value["tasks"], list) or not 1 <= len(value["tasks"]) <= 3:
             raise ValueError("Piano vuoto")
         validated = RunIn(prompt=body.prompt, model=body.model, provider=body.provider, tasks=value["tasks"])
         for task in validated.tasks:
-            if len(task.instruction) > 180:
+            if len(task.instruction) > 1000:
                 raise ValueError("Istruzione troppo lunga")
             if task.agent_id not in agents or (task.tool and task.tool not in agents[task.agent_id].tools):
                 raise ValueError("Tool non concesso")

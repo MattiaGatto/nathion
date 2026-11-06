@@ -112,7 +112,7 @@ async def add_agent_document(agent_id: str, request: Request, name: str = Query(
     content = bytearray()
     async for chunk in request.stream():
         if len(content) + len(chunk) > MAX_BYTES:
-            raise HTTPException(413, "Il file supera 2 MB")
+            raise HTTPException(413, "Il file supera 8 MB")
         content.extend(chunk)
     try:
         text = await run_in_threadpool(extract_text, name, bytes(content))
@@ -131,7 +131,7 @@ async def add_agent_document(agent_id: str, request: Request, name: str = Query(
     if any(document_info(item)["name"].casefold() == name.casefold() for item in existing):
         raise HTTPException(409, "Nome già presente. Rimuovi il documento precedente oppure rinomina il nuovo file.")
     if len(existing) >= MAX_DOCUMENTS:
-        raise HTTPException(409, "Limite di 12 documenti per agente raggiunto")
+        raise HTTPException(409, "Limite di 24 documenti per agente raggiunto")
     row = AppSettings(key=key, value=json.dumps({"name": name, "text": text}, ensure_ascii=False))
     db.add(row)
     db.commit()
@@ -298,7 +298,7 @@ async def start_run(body: RunIn, db: Session = Depends(get_db), gateway: LLMGate
 
 
 class VoiceRunIn(BaseModel):
-    command: str = Field(min_length=1, max_length=8100)
+    command: str = Field(min_length=1, max_length=24100)
     model: str | None = Field(default=None, min_length=1, max_length=200)
 
 
@@ -309,8 +309,8 @@ async def voice_run(body: VoiceRunIn, db: Session = Depends(get_db), gateway: LL
     model = agent.model or body.model
     if not model:
         raise HTTPException(422, "Scegli un modello per l’agente o per la chat")
-    if len(prompt) > 8000:
-        raise HTTPException(422, "La richiesta supera 8.000 caratteri")
+    if len(prompt) > 24000:
+        raise HTTPException(422, "La richiesta supera 24.000 caratteri")
     task = Task(id="direct", agent_id=agent.id, instruction=prompt)
     run = await run_workflow(RunIn(prompt=prompt, model=model, tasks=[task]), db, gateway, agents)
     return {**run, "agent_name": agent.name, "voice_profile": agent.voice_profile}

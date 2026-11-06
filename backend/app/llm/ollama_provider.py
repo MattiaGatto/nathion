@@ -50,14 +50,14 @@ class OllamaProvider(LLMProvider):
             for model in payload.get("models", [])
         ]
 
-    async def chat(self, messages: list[ChatMessage], model: str) -> str:
-        chunks = [chunk async for chunk in self.chat_stream(messages, model)]
+    async def chat(self, messages: list[ChatMessage], model: str, *, preserve_context: bool = False) -> str:
+        chunks = [chunk async for chunk in self.chat_stream(messages, model, preserve_context=preserve_context)]
         return "".join(chunks)
 
     async def chat_structured(self, messages: list[ChatMessage], model: str, schema: dict) -> str:
         return "".join([chunk async for chunk in self.chat_stream(messages, model, response_format=schema)])
 
-    async def chat_stream(self, messages: list[ChatMessage], model: str, response_format: dict | None = None) -> AsyncIterator[str]:
+    async def chat_stream(self, messages: list[ChatMessage], model: str, response_format: dict | None = None, *, preserve_context: bool = False) -> AsyncIterator[str]:
         url = f"{self._base_url}/api/chat"
         body = {
             "model": model,
@@ -69,6 +69,9 @@ class OllamaProvider(LLMProvider):
         if model.startswith(("qwen3:", "qwen3.5:")):
             body["think"] = False
 
+        if preserve_context:
+            body.update(truncate=False, shift=False)
+
         if response_format is not None:
             body["format"] = response_format
             body["options"] = {**self._options, "temperature": 0}
@@ -76,6 +79,14 @@ class OllamaProvider(LLMProvider):
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 async with client.stream("POST", url, json=body) as response:
+                    if preserve_context and response.is_error:
+                        await response.aread()
+                        try:
+                            detail = response.json().get("error", "")
+                        except ValueError:
+                            detail = ""
+                        if isinstance(detail, str) and any(term in detail.casefold() for term in ("context", "too long", "input length")):
+                            raise LLMProviderError("Il contesto supera la capacità del modello. Aumenta la finestra di contesto di Ollama o riduci il materiale inviato per questa attività.")
                     response.raise_for_status()
                     async for line in response.aiter_lines():
                         if not line:

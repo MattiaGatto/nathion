@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 from app.core.identity import preference_key
 from app.db.models import AppSettings
 
-MAX_BYTES = 2 * 1024 * 1024
-MAX_TEXT = 100_000
-MAX_DOCUMENTS = 12
+MAX_BYTES = 8 * 1024 * 1024
+MAX_TEXT = 300_000
+MAX_DOCUMENTS = 24
 WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 COMMON = set("della delle degli nello nelle questo questa questi quale quali come sono cosa puoi devo voglio agente documento richiesta the with from what this that about".split())
 
@@ -24,18 +24,18 @@ def extract_text(filename: str, content: bytes) -> str:
     suffix = PurePath(filename).suffix.lower()
     if suffix == ".pdf":
         reader = PdfReader(io.BytesIO(content))
-        if reader.is_encrypted or len(reader.pages) > 40:
-            raise ValueError("Usa un PDF senza password con al massimo 40 pagine.")
+        if reader.is_encrypted or len(reader.pages) > 100:
+            raise ValueError("Usa un PDF senza password con al massimo 100 pagine.")
         pages = []
         length = 0
         for page in reader.pages:
             stream = page.get_contents()
-            if stream and len(stream.get_data()) > 4 * MAX_BYTES:
+            if stream and len(stream.get_data()) > MAX_BYTES:
                 raise ValueError("Il contenuto di una pagina PDF è troppo grande.")
             text = page.extract_text()
             length += len(text)
             if length > MAX_TEXT:
-                raise ValueError("Il documento supera 100.000 caratteri. Dividilo in più file.")
+                raise ValueError("Il documento supera 300.000 caratteri. Dividilo in più file.")
             pages.append(text)
         text = "\n\n".join(pages)
     elif suffix == ".docx":
@@ -61,7 +61,7 @@ def extract_text(filename: str, content: bytes) -> str:
     if not text:
         raise ValueError("Nessun testo estraibile. Per un PDF scansionato, usa prima l’OCR.")
     if len(text) > MAX_TEXT:
-        raise ValueError("Il documento supera 100.000 caratteri. Dividilo in più file.")
+        raise ValueError("Il documento supera 300.000 caratteri. Dividilo in più file.")
     return text
 
 
@@ -109,6 +109,6 @@ def relevant_excerpts(sources: list[dict], query: str) -> list[dict]:
         if any(item["source"] == name for item in results):
             continue
         results.append({"source": name, "excerpt": excerpt})
-        if len(results) == 2:
+        if len(results) == 4:
             break
     return results

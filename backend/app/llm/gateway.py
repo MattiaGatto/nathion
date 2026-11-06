@@ -55,10 +55,13 @@ class LLMGateway:
         return await self.get_provider(provider).list_models()
 
     async def chat(
-        self, messages: list[ChatMessage], model: str, provider: str | None = None
+        self, messages: list[ChatMessage], model: str, provider: str | None = None, *, preserve_context: bool = False
     ) -> str:
         with compute_slot(model, provider or self._settings.default_llm_provider):
-            return await self.get_provider(provider).chat(messages, model)
+            engine = self.get_provider(provider)
+            if preserve_context and isinstance(engine, OllamaProvider):
+                return await engine.chat(messages, model, preserve_context=True)
+            return await engine.chat(messages, model)
 
     async def chat_structured(self, messages: list[ChatMessage], model: str, schema: dict, provider: str | None = None) -> str:
         with compute_slot(model, provider or self._settings.default_llm_provider):
