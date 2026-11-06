@@ -54,6 +54,7 @@ class Agent(BaseModel):
     description: str
     instructions: str
     custom: bool = False
+    color: str = Field(default="#62dbff", pattern=r"^#[0-9a-fA-F]{6}$")
     job_role: str | None = None
     skills: list[str] = []
     tools: list[str] = []
@@ -66,12 +67,12 @@ class Agent(BaseModel):
 
 AGENTS = {item.id: item for item in [
     Agent(id="general", name="Atlante", voice_profile="ugo", job_role="General Assistant", description="Sintesi e assistenza generale", instructions="Rispondi in italiano in modo chiaro e verificabile.", tools=["calculator", "clock"]),
-    Agent(id="architect", name="Dedalo", voice_profile="giorgio", job_role="Software Architect", description="Architettura e compromessi", instructions="Progetta soluzioni modulari, esplicita vincoli e compromessi.", skills=["architecture"]),
-    Agent(id="coding", name="Cifra", job_role="Coding Agent", description="Sviluppo e revisione", instructions="Scrivi codice verificabile e segnala assunzioni e test necessari.", skills=["code-review"]),
-    Agent(id="data", name="Delta", job_role="Data Engineering", description="Database e pipeline", instructions="Progetta pipeline affidabili e contratti dati espliciti.", skills=["architecture"]),
-    Agent(id="ai", name="Visione", job_role="AI Engineering", description="Modelli e valutazioni", instructions="Valuta modelli e metriche con attenzione a costi, privacy e limiti."),
-    Agent(id="research", name="Oracolo", voice_profile="aurora", job_role="Research Agent", description="Analisi delle informazioni fornite", instructions="Analizza le fonti fornite. Non inventare ricerche web o citazioni: non hai accesso al browser."),
-    Agent(id="productivity", name="Crono", job_role="Productivity Agent", description="Piani e organizzazione", instructions="Definisci passi concreti, dipendenze e criteri di completamento.", skills=["planning"]),
+    Agent(id="architect", name="Dedalo", color="#ffb35c", voice_profile="giorgio", job_role="Software Architect", description="Architettura e compromessi", instructions="Progetta soluzioni modulari, esplicita vincoli e compromessi.", skills=["architecture"]),
+    Agent(id="coding", name="Cifra", color="#62e8ad", job_role="Coding Agent", description="Sviluppo e revisione", instructions="Scrivi codice verificabile e segnala assunzioni e test necessari.", skills=["code-review"]),
+    Agent(id="data", name="Delta", color="#7ca8ff", job_role="Data Engineering", description="Database e pipeline", instructions="Progetta pipeline affidabili e contratti dati espliciti.", skills=["architecture"]),
+    Agent(id="ai", name="Visione", color="#e6d36c", job_role="AI Engineering", description="Modelli e valutazioni", instructions="Valuta modelli e metriche con attenzione a costi, privacy e limiti."),
+    Agent(id="research", name="Oracolo", color="#ee8db1", voice_profile="aurora", job_role="Research Agent", description="Analisi delle informazioni fornite", instructions="Analizza le fonti fornite. Non inventare ricerche web o citazioni: non hai accesso al browser."),
+    Agent(id="productivity", name="Crono", color="#ff8b72", job_role="Productivity Agent", description="Piani e organizzazione", instructions="Definisci passi concreti, dipendenze e criteri di completamento.", skills=["planning"]),
 ]}
 
 
@@ -79,6 +80,7 @@ DEFAULT_AGENTS = {"general", "architect", "coding", "research"}
 
 
 class AgentPatch(BaseModel):
+    color: str = Field(default="#62dbff", pattern=r"^#[0-9a-fA-F]{6}$")
     identity: AgentIdentity | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
     memory_access: Literal["read", "none"] = "read"
@@ -255,6 +257,37 @@ class RunIn(BaseModel):
         return self
 
 
+VOICE_TOPICS = {
+    "architect": (r"architettur\w*|architecture|microserviz\w*|monolit\w*|system design", r"architect|architett"),
+    "coding": (r"codice|debug\w*|python|typescript|javascript|refactor\w*|stack trace", r"coding|developer|svilupp"),
+    "data": (r"database|pipeline dati|sql|etl|schema dati", r"data engineering|database|ingegneria dei dati"),
+    "ai": (r"rag|llm|embedding\w*|whisper|modelli? ai|modelli? di linguaggio|machine learning|fine tuning|prompt engineering",
+           r"\bai\b|machine learning|intelligenza artificiale"),
+    "research": (r"fonti|ricerca documentale|revision\w* della letteratura|confront\w* i documenti", r"research|ricerca"),
+    "productivity": (r"pianifica\w*|calendario|agenda|appuntament\w*|promemoria|piano settimanale|priorita delle attivita", r"productivity|produttivit|segretar\w*|assistente personale|executive assistant"),
+}
+
+
+def suggest_voice_agent(agents: dict[str, Agent], prompt: str) -> Agent | None:
+    text = " ".join(spoken_words(prompt))
+    matches = [(key, len(set(re.findall(rf"\b(?:{terms})\b", text))), role)
+               for key, (terms, role) in VOICE_TOPICS.items()]
+    ranked = []
+    for agent in agents.values():
+        job = " ".join(spoken_words(agent.job_role or ""))
+        scores = [
+            hits * 4 + (1 if agent.id == key else 0)
+            for key, hits, role in matches
+            if hits and (agent.id == key or (agent.custom and re.search(role, job)))
+        ]
+        if scores:
+            ranked.append((max(scores), agent))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    if not ranked or (len(ranked) > 1 and ranked[0][0] == ranked[1][0]):
+        return None
+    return ranked[0][1]
+
+
 def plan(prompt: str, agents: dict[str, Agent]) -> list[Task]:
     if not agents:
         raise HTTPException(422, "Aggiungi o ripristina un agente prima di avviare un’attività")
@@ -311,7 +344,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dic
                 result = str(calculate(task.instruction)) if task.tool == "calculator" else datetime.now(timezone.utc).isoformat()
                 outputs[task.id] = result
                 event("tool", task=task.id, agent=agent.id, tool=task.tool, result=result)
-                event("completed", task=task.id, agent=agent.id, agent_name=agent.name, voice_profile=agent.voice_profile, result=result)
+                event("completed", task=task.id, agent=agent.id, agent_name=agent.name, voice_profile=agent.voice_profile, color=agent.color, result=result)
                 return
             instructions = agent.instructions + "\n" + "\n".join(s.instructions for s in chosen) + "\nAdatta il dettaglio alla richiesta e conserva completo l'eventuale codice."
             if agent.custom_skills:
@@ -333,7 +366,7 @@ async def execute_run(body: RunIn, db: Session, gateway: LLMGateway, agents: dic
             if not result.strip():
                 raise ValueError("Risposta agente vuota")
             outputs[task.id] = result
-            event("completed", task=task.id, agent=agent.id, agent_name=agent.name, voice_profile=agent.voice_profile, result=outputs[task.id])
+            event("completed", task=task.id, agent=agent.id, agent_name=agent.name, voice_profile=agent.voice_profile, color=agent.color, result=outputs[task.id])
 
     try:
         async with asyncio.timeout(180):

@@ -223,20 +223,33 @@
 }
 
 .voice-console[data-agent] {
-  --hud: #d5b7ff;
-  --hud-glow: rgb(174 103 255 / 42%);
+  --hud: color-mix(in srgb, var(--agent-accent) 66%, white);
+  --hud-glow: color-mix(in srgb, var(--agent-accent) 42%, transparent);
 }
 
 .voice-console[data-agent] .voice-console__display {
-  border-color: rgb(195 151 255 / 44%);
-  background: radial-gradient(ellipse at 50% 25%, #282044, transparent 78%), #10101d;
+  border-color: color-mix(in srgb, var(--agent-accent) 44%, transparent);
+  background: radial-gradient(ellipse at 50% 25%, var(--hud-glow), transparent 78%), #10101d;
 }
 
 .voice-console__agent {
   margin-bottom: .2rem;
-  color: #f0e4ff;
+  color: var(--hud);
   font-weight: 650;
   overflow-wrap: anywhere;
+}
+
+.voice-agent-return,
+.voice-agent-response {
+  border-color: var(--hud-glow);
+}
+
+.voice-agent-return {
+  color: var(--hud);
+}
+
+.voice-agent-response {
+  background: color-mix(in srgb, var(--hud) 10%, transparent);
 }
 
 .profile-markdown {
@@ -286,11 +299,7 @@
   width: 3.65rem;
   min-height: 2.9rem;
   transform: translate(-50%, -50%);
-  color: #bcecff;
-}
-
-.agent-orbit__agent[data-personal] {
-  color: #e4ceff;
+  color: color-mix(in srgb, var(--agent-accent, #62dbff) 65%, white);
 }
 
 .agent-orbit__badge {
@@ -332,7 +341,7 @@
 .voice-stage {
   background:
     radial-gradient(ellipse at 50% 38%, rgb(28 59 93 / 72%), transparent 58%),
-    radial-gradient(ellipse at 12% 100%, rgb(62 31 91 / 31%), transparent 56%),
+    radial-gradient(ellipse at 12% 100%, rgb(22 54 78 / 27%), transparent 56%),
     #060b16;
 }
 
@@ -351,6 +360,11 @@
   inset: 10%;
   border-color: rgb(132 218 255 / 45%);
   box-shadow: 0 0 60px rgb(71 185 255 / 14%), inset 0 0 40px rgb(71 185 255 / 10%);
+}
+
+.voice-console[data-focus][data-agent] .agent-orbit::before {
+  border-color: var(--hud-glow);
+  box-shadow: 0 0 50px color-mix(in srgb, var(--agent-accent) 20%, transparent);
 }
 
 .voice-console[data-focus] .agent-orbit::after {
@@ -384,18 +398,16 @@
 .voice-console[data-focus] .agent-orbit__agent[data-selected] {
   z-index: 2;
   transform: translate(-50%, -50%) scale(1.17);
-  color: #e4ceff;
 }
 
 .voice-console[data-focus] .agent-orbit__agent[data-speaking] {
   z-index: 3;
   transform: translate(-50%, -50%) scale(1.58);
   opacity: 1;
-  color: #f0dfff;
 }
 
 .voice-console[data-focus] .agent-orbit__agent[data-speaking] .agent-orbit__badge {
-  background: #4c3276;
+  background: color-mix(in srgb, currentColor 28%, #111d31);
   animation: speaker-halo 900ms ease-in-out infinite alternate;
 }
 
@@ -409,6 +421,6 @@
 }
 
 @keyframes speaker-halo {
-  from { box-shadow: 0 0 12px #a17cff, 0 0 0 2px rgb(162 112 255 / 24%); }
-  to { box-shadow: 0 0 24px #a17cff, 0 0 0 7px rgb(162 112 255 / 14%); }
+  from { box-shadow: 0 0 12px currentColor, 0 0 0 2px color-mix(in srgb, currentColor 24%, transparent); }
+  to { box-shadow: 0 0 24px currentColor, 0 0 0 7px color-mix(in srgb, currentColor 14%, transparent); }
 }

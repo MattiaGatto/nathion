@@ -23,7 +23,7 @@ from app.core.preferences import default_provider
 from app.memory import index_memory, retrieve_context
 from app.core.config import get_settings
 from app.runtime import (AGENTS, AgentIdentity, AgentPatch, MemoryIn, RunIn, Task, VoiceTurn, discover_skills, execute_run,
-                         fingerprint, retrieve, load_agents, resolve_voice_agent, spoken_words)
+                         fingerprint, retrieve, load_agents, resolve_voice_agent, spoken_words, suggest_voice_agent)
 
 from app.agent_documents import MAX_BYTES, MAX_DOCUMENTS, document_info, document_prefix, documents, extract_text
 
@@ -338,10 +338,21 @@ class VoiceRunIn(VoiceTargetIn):
     model: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+def voice_target_out(agent, prompt: str):
+    return {"id": agent.id, "name": agent.name, "voice_profile": agent.voice_profile, "color": agent.color,
+            "job_role": agent.job_role, "prompt": prompt}
+
+
+@router.post("/runs/voice/suggest")
+def voice_suggestion(body: VoiceTargetIn, db: Session = Depends(get_db)):
+    agent = suggest_voice_agent(load_agents(db), body.command)
+    return voice_target_out(agent, body.command) if agent else None
+
+
 @router.post("/runs/voice/target")
 def voice_target(body: VoiceTargetIn, db: Session = Depends(get_db)):
     agent, prompt = resolve_voice_agent(load_agents(db), body.command, allow_empty=True)
-    return {"id": agent.id, "name": agent.name, "voice_profile": agent.voice_profile, "prompt": prompt}
+    return voice_target_out(agent, prompt)
 
 
 @router.post("/runs/voice")
@@ -363,4 +374,4 @@ async def voice_run(body: VoiceRunIn, db: Session = Depends(get_db), gateway: LL
         raise HTTPException(422, "La richiesta supera 24.000 caratteri")
     task = Task(id="direct", agent_id=agent.id, instruction=prompt)
     run = await run_workflow(RunIn(prompt=prompt, model=model, tasks=[task], voice_history=body.history), db, gateway, agents)
-    return {**run, "agent_name": agent.name, "voice_profile": agent.voice_profile}
+    return {**run, "agent_name": agent.name, "voice_profile": agent.voice_profile, "color": agent.color}

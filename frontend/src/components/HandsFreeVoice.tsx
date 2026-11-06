@@ -4,12 +4,13 @@ import { api, workspaceRequest } from "../api/client";
 import { claimAudio, openMicrophone, releaseAudio } from "../audioOwner";
 import { TurnDetector, wavAudio, nextPhrase } from "../voiceSession";
 
-interface VoiceAgent { id: string; name: string; voice_profile: string; }
-interface Speaker { id: string; name: string; profile: string; }
+interface VoiceAgent { id: string; name: string; voice_profile: string; color?: string; job_role?: string | null; }
+interface Speaker { id: string; name: string; profile: string; color?: string; }
 interface SpokenLine { text: string; speaker?: Speaker; }
-interface AgentRun { status: string; result: string; agent_name?: string; voice_profile?: string;
-  trace?: { type: string; agent?: string; agent_name?: string; voice_profile?: string; result?: string }[]; }
-interface OrbitAgent extends VoiceAgent { job_role?: string | null; custom: boolean; }
+interface AgentRun { status: string; result: string; agent_name?: string; voice_profile?: string; color?: string;
+  trace?: { type: string; agent?: string; agent_name?: string; voice_profile?: string; color?: string; result?: string }[]; }
+interface VoiceTarget extends VoiceAgent { prompt: string; }
+interface OrbitAgent extends VoiceAgent { custom: boolean; }
 interface VoiceTurn { request: string; answer: string; }
 
 interface Props { hero?: boolean; showOrbit: boolean; agentRevision: number; focused: boolean; onFocus: () => void; model: string | null; connected: boolean; response: { content: string; done: boolean } | null; onSend: (text: string) => boolean; onInterrupt: () => void; }
@@ -306,81 +307,82 @@ export function HandsFreeVoice(props: Props) {
               returnToNathion(true);
               return;
             }
-            if (namedAgent || delegation || activeAgent.current) {
+            const runAgent = async (suggested?: VoiceTarget) => {
               const model = latest.current.model;
-              const runAgent = async () => {
-                try {
-                  let target = activeAgent.current;
-                  let prompt = text;
-                  if (namedAgent) {
-                    if (!namedAgent[1]?.trim()) throw new Error("Dimmi quale agente vuoi chiamare.");
-                    const resolved = await workspaceRequest<VoiceAgent & { prompt: string }>("runs/voice/target", {
-                      method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ command: namedAgent[1].trim() }),
-                    });
-                    if (abort.signal.aborted || current !== generation.current) return;
-                    if (target?.id !== resolved.id) agentHistory.current = [];
-                    activeAgent.current = target = resolved;
-                    prompt = resolved.prompt;
-                    agentPending.current = Boolean(prompt);
-                    setAgentTurn({ name: target.name, pending: Boolean(prompt) });
-                    const acknowledgement = `Va bene, ti passo ${target.name}.`;
-                    setStatus(acknowledgement);
-                    setActionResult(acknowledgement);
-                    queue.current.push({ text: acknowledgement });
-                    void playQueue();
-                    if (!prompt) return;
-                  }
-                  if (delegation) {
-                    if (!model) throw new Error("Scegli un modello per la chat.");
-                    prompt = delegation[1];
-                  }
-                  const named = delegation ? null : target;
-                  agentPending.current = true;
-                  setAgentTurn({ name: named ? named.name : "", pending: true });
-                  if (!namedAgent) setStatus(named ? `${named.name} sta elaborando…` : "Gli agenti stanno elaborando la richiesta…");
-                  const request = named
-                    ? { agent_id: named.id, command: prompt, model, history: agentHistory.current }
-                    : { prompt, model };
-                  const run = await workspaceRequest<AgentRun>(
-                    named ? "runs/voice" : "runs", {
-                      method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(request),
-                    },
-                  );
-                  if (abort.signal.aborted || !running.current || current !== generation.current) return;
-                  agentPending.current = false;
-                  setAgentTurn({ name: run.agent_name ?? activeAgent.current?.name ?? "", pending: false });
-                  if (run.status !== "completed") throw new Error("Attività interrotta. Apri Agenti per vedere l’esito.");
-                  if (named) agentHistory.current = [...agentHistory.current.slice(-2), { request: prompt.slice(0, 1000), answer: run.result.slice(0, 2000) }];
-                  setActionResult(run.result);
-                  transcriptReceived.current = true;
-                  const contributions = run.trace?.filter((item) => item.type === "completed" && item.agent && item.result) ?? [];
-                  if (!named && contributions.length > 1) {
-                    for (const item of contributions) {
-                      const agent = { id: item.agent!, name: item.agent_name ?? item.agent!, profile: item.voice_profile ?? "default" };
-                      queue.current.push({ text: `${agent.name}.` , speaker: agent });
-                      enqueueSpeech(item.result!, agent, 2);
-                    }
-                    queue.current.push({ text: "Ti riassumo i contributi." });
-                  }
-                  const replySpeaker = named ? { id: named.id, name: run.agent_name ?? named.name, profile: run.voice_profile ?? named.voice_profile }
-                    : contributions.length === 1
-                      ? { id: contributions[0].agent!, name: contributions[0].agent_name ?? contributions[0].agent!, profile: contributions[0].voice_profile ?? "default" }
-                      : undefined;
-                  enqueueSpeech(run.result, replySpeaker);
+              try {
+                let target = activeAgent.current;
+                let prompt = text;
+                if (namedAgent || suggested) {
+                  if (!suggested && !namedAgent?.[1]?.trim()) throw new Error("Dimmi quale agente vuoi chiamare.");
+                  const resolved = suggested ?? await workspaceRequest<VoiceTarget>("runs/voice/target", {
+                    method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ command: namedAgent?.[1].trim() }),
+                  });
+                  if (abort.signal.aborted || current !== generation.current) return;
+                  if (target?.id !== resolved.id) agentHistory.current = [];
+                  activeAgent.current = target = resolved;
+                  prompt = resolved.prompt;
+                  agentPending.current = Boolean(prompt);
+                  setAgentTurn({ name: target.name, pending: Boolean(prompt) });
+                  const acknowledgement = `Va bene, ti passo ${target.name}.`;
+                  setStatus(acknowledgement);
+                  setActionResult(acknowledgement);
+                  queue.current.push({ text: acknowledgement }, {
+                    text: resolved.job_role ? `Ciao, sono ${resolved.name}, ${resolved.job_role}.` : `Ciao, sono ${resolved.name}.`,
+                    speaker: { id: resolved.id, name: resolved.name, profile: resolved.voice_profile, color: resolved.color },
+                  });
                   void playQueue();
-                } catch (err) {
-                  if (abort.signal.aborted || !running.current || current !== generation.current) return;
-                  agentPending.current = false;
-                  setAgentTurn(activeAgent.current ? { name: activeAgent.current.name, pending: false } : null);
-                  setActionResult(err instanceof Error ? err.message : "Richiesta all’agente non riuscita.");
-                  setStatus("Ti ascolto…");
-                  resetIdle();
+                  if (!prompt) return;
                 }
-              };
-              return runAgent();
-            }
+                if (delegation) {
+                  if (!model) throw new Error("Scegli un modello per la chat.");
+                  prompt = delegation[1];
+                }
+                const named = delegation ? null : target;
+                agentPending.current = true;
+                setAgentTurn({ name: named ? named.name : "", pending: true });
+                if (!namedAgent && !suggested) setStatus(named ? `${named.name} sta elaborando…` : "Gli agenti stanno elaborando la richiesta…");
+                const request = named
+                  ? { agent_id: named.id, command: prompt, model, history: agentHistory.current }
+                  : { prompt, model };
+                const run = await workspaceRequest<AgentRun>(
+                  named ? "runs/voice" : "runs", {
+                    method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(request),
+                  },
+                );
+                if (abort.signal.aborted || !running.current || current !== generation.current) return;
+                agentPending.current = false;
+                setAgentTurn({ name: run.agent_name ?? activeAgent.current?.name ?? "", pending: false });
+                if (run.status !== "completed") throw new Error("Attività interrotta. Apri Agenti per vedere l’esito.");
+                if (named) agentHistory.current = [...agentHistory.current.slice(-2), { request: prompt.slice(0, 1000), answer: run.result.slice(0, 2000) }];
+                setActionResult(run.result);
+                transcriptReceived.current = true;
+                const contributions = run.trace?.filter((item) => item.type === "completed" && item.agent && item.result) ?? [];
+                if (!named && contributions.length > 1) {
+                  for (const item of contributions) {
+                    const agent = { id: item.agent!, name: item.agent_name ?? item.agent!, profile: item.voice_profile ?? "default", color: item.color };
+                    queue.current.push({ text: `${agent.name}.`, speaker: agent });
+                    enqueueSpeech(item.result!, agent, 2);
+                  }
+                  queue.current.push({ text: "Ti riassumo i contributi." });
+                }
+                const replySpeaker = named ? { id: named.id, name: run.agent_name ?? named.name, profile: run.voice_profile ?? named.voice_profile, color: run.color ?? named.color }
+                  : contributions.length === 1
+                    ? { id: contributions[0].agent!, name: contributions[0].agent_name ?? contributions[0].agent!, profile: contributions[0].voice_profile ?? "default", color: contributions[0].color }
+                    : undefined;
+                enqueueSpeech(run.result, replySpeaker);
+                void playQueue();
+              } catch (err) {
+                if (abort.signal.aborted || !running.current || current !== generation.current) return;
+                agentPending.current = false;
+                setAgentTurn(activeAgent.current ? { name: activeAgent.current.name, pending: false } : null);
+                setActionResult(err instanceof Error ? err.message : "Richiesta all’agente non riuscita.");
+                setStatus("Ti ascolto…");
+                resetIdle();
+              }
+            };
+            if (namedAgent || delegation || activeAgent.current) return runAgent();
             const command = canControlPC && pcCommands.find((item) => item.pattern.test(text));
             if (command) {
               if (pendingPC.current) {
@@ -406,10 +408,17 @@ export function HandsFreeVoice(props: Props) {
               });
             }
             if (text.trim()) {
-              transcriptReceived.current = true;
-              cursor.current = 0; expected.current = true;
-              if (!latest.current.onSend(text)) { expected.current = false; throw new Error("La chat non è pronta. Riprova dopo la risposta."); }
-              setStatus("Frase inviata alla chat. Attendo la risposta…");
+              return workspaceRequest<VoiceTarget | null>("runs/voice/suggest", {
+                method: "POST", signal: abort.signal, headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ command: text }),
+              }).catch(() => null).then((target) => {
+                if (abort.signal.aborted || current !== generation.current) return;
+                if (target) return runAgent(target);
+                transcriptReceived.current = true;
+                cursor.current = 0; expected.current = true;
+                if (!latest.current.onSend(text)) { expected.current = false; throw new Error("La chat non è pronta. Riprova dopo la risposta."); }
+                setStatus("Frase inviata alla chat. Attendo la risposta…");
+              });
             } else {
               setStatus("Nessuna parola riconosciuta. Prova a parlare più vicino al microfono.");
               resetIdle();
@@ -485,6 +494,7 @@ export function HandsFreeVoice(props: Props) {
     void start(true);
   }
 
+  const agentColor = speaker ? speaker.color : audio.current ? undefined : activeAgent.current?.color;
   const highlightedId = speaker?.id ?? activeAgent.current?.id;
   const speakerIndex = speaker ? orbitAgents.findIndex((agent) => agent.id === speaker.id) : -1;
   const displayedPage = speakerIndex < 0 ? orbitPage : Math.floor(speakerIndex / 8);
@@ -504,7 +514,7 @@ export function HandsFreeVoice(props: Props) {
 
   return (
     <section className={`voice-console ${props.hero ? "voice-console--hero" : "voice-console--compact"}`}
-      data-phase={phase} data-focus={props.focused || undefined} data-other-speaker={speaker ? "" : undefined} data-agent={agentTurn || speaker ? "" : undefined} style={{ "--voice-signal": signal } as CSSProperties} aria-label="Conversazione vocale">
+      data-phase={phase} data-focus={props.focused || undefined} data-other-speaker={speaker ? "" : undefined} data-agent={agentColor ? "" : undefined} style={{ "--voice-signal": signal, "--agent-accent": agentColor } as CSSProperties} aria-label="Conversazione vocale">
       <div className="voice-console__display">
         <div className={hasOrbit ? "agent-orbit" : "contents"}>
         <button
@@ -534,9 +544,9 @@ export function HandsFreeVoice(props: Props) {
         {hasOrbit && orbitSlice.map((agent, index) => {
           const angle = -Math.PI / 2 + 2 * Math.PI * index / orbitSlice.length;
           return <button key={agent.id} type="button"
-            className="agent-orbit__agent" data-personal={agent.custom || undefined}
+            className="agent-orbit__agent"
             data-speaking={speaker?.id === agent.id || undefined} data-selected={highlightedId === agent.id || undefined}
-            style={{ left: `${50 + 39 * Math.cos(angle)}%`, top: `${50 + 39 * Math.sin(angle)}%` }}
+            style={{ left: `${50 + 39 * Math.cos(angle)}%`, top: `${50 + 39 * Math.sin(angle)}%`, "--agent-accent": agent.color } as CSSProperties}
             disabled={!props.connected || Boolean(audio.current) || agentPending.current} onClick={() => selectOrbitAgent(agent)}
             title={agent.job_role ? `${agent.name} · ${agent.job_role}` : agent.name}
             aria-label={`Parla con ${agent.name}`}>
@@ -563,7 +573,7 @@ export function HandsFreeVoice(props: Props) {
           <p className="voice-console__status" role="status">{status || (props.focused ? "Tocca per continuare a parlare" : "Attiva ascolto")}</p>
         </div>
       </div>
-      {agentTurn?.name && <button type="button" className="mx-auto rounded-lg border border-violet-400/30 px-4 py-2 text-sm text-violet-200"
+      {agentTurn?.name && <button type="button" className="voice-agent-return mx-auto rounded-lg border px-4 py-2 text-sm"
         onClick={() => returnToNathion(false)}>Torna a Nathion</button>}
       {props.focused && phase === "speaking" && <button type="button" className="mx-auto rounded-lg border border-sky-400/30 px-4 py-2 text-sm text-sky-100"
         onClick={() => {
@@ -610,9 +620,9 @@ export function HandsFreeVoice(props: Props) {
         <p className="max-h-52 overflow-auto whitespace-pre-wrap rounded-lg border border-sky-400/25 bg-sky-400/10 p-3 text-left text-sm">{props.response.content}</p>
       )}
       {actionResult && <div role="status" className={agentTurn
-        ? "max-h-48 overflow-auto rounded-lg border border-violet-400/25 bg-violet-400/10 p-3 text-sm"
+        ? "voice-agent-response max-h-48 overflow-auto rounded-lg border p-3 text-sm"
         : "max-h-36 overflow-auto"}>
-        {agentTurn?.name && <p className="mb-1 font-semibold text-violet-200">{agentTurn.name}</p>}
+        {agentTurn?.name && <p className="voice-console__agent mb-1 font-semibold">{agentTurn.name}</p>}
         <p className="whitespace-pre-wrap">{actionResult}</p>
       </div>}
       {error && <p role="alert" className="text-red-300">{error}</p>}

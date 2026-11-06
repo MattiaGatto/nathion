@@ -16,6 +16,7 @@ export interface Agent {
   memory_access: "read" | "none";
   timeout_seconds: number;
   voice_profile: string;
+  color: string;
 }
 
 const profileLimit = 32000;
@@ -73,7 +74,7 @@ export function AgentStudio({ agents, voices, onSaved, onDeleted }: {
               <button key={item.id} type="button" aria-pressed={item.id === agent.id} onClick={() => setSelected(item.id)}
                 className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 text-left text-sm hover:bg-sky-400/5 aria-pressed:border-sky-400/35 aria-pressed:bg-sky-400/10">
                 <span aria-hidden="true" className="font-mono text-xs text-sky-300">{String(index + 1).padStart(2, "0")}</span>
-                <span className="min-w-0 break-words">{item.name}<small className="block text-nathion-muted">{item.job_role || "Ruolo da definire"}</small>{item.custom && <small className="mt-1 inline-block rounded bg-violet-400/15 px-1.5 text-violet-200">Personale</small>}</span>
+                <span className="min-w-0 break-words"><span className="inline-flex items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} aria-hidden="true" />{item.name}</span><small className="block text-nathion-muted">{item.job_role || "Ruolo da definire"}</small>{item.custom && <small className="mt-1 inline-block rounded bg-violet-400/15 px-1.5 text-violet-200">Personale</small>}</span>
               </button>
             ))}
           </nav>
@@ -160,6 +161,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
   const [jobRole, setJobRole] = useState(agent.job_role ?? "");
   const [model, setModel] = useState(agent.model ?? "");
   const [voice, setVoice] = useState(agent.voice_profile);
+  const [color, setColor] = useState(agent.color ?? "#62dbff");
   const [memory, setMemory] = useState(agent.memory_access);
   const [skills, setSkills] = useState(agent.custom_skills);
   const [documents, setDocuments] = useState<Source[]>([]);
@@ -190,7 +192,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(tab === "Skill"
           ? { custom_skills: skills.map(({ name, instructions }) => ({ name: name.trim(), instructions: instructions.trim() })) }
-          : { model: model.trim() || null, voice_profile: voice, memory_access: memory,
+          : { model: model.trim() || null, voice_profile: voice, memory_access: memory, color,
             ...(agent.custom ? { identity: { name: name.trim(), description: description.trim(), job_role: jobRole.trim() || null } } : {}) }),
       });
       onSaved(saved);
@@ -239,7 +241,7 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
     <div className="min-w-0 space-y-6 p-4 sm:p-6">
       <header>
         <h3 className="text-xl font-semibold">{agent.name}</h3>
-        <p className="mt-1 text-sm font-medium text-violet-200">{agent.job_role || "Ruolo da definire"}</p>
+        <p className="mt-1 text-sm font-medium text-nathion-muted">{agent.job_role || "Ruolo da definire"}</p>
         {agent.custom && <span className="mt-1 inline-block rounded bg-violet-400/15 px-1.5 text-xs text-violet-200">Personale</span>}
         <p className="mt-1 line-clamp-2 break-words text-sm text-nathion-muted">{agent.description}</p>
       </header>
@@ -265,6 +267,12 @@ function AgentEditor({ agent, voices, onSaved, onDeleted }: {
             {voices.map((profile) => <option key={profile} value={profile}>{profile === "default" ? "Paola" : profile === "ugo" ? "Ugo · qualità media" : profile}</option>)}
           </select></label>
         </div>
+        <label className="flex flex-wrap items-center gap-3 rounded-lg border border-nathion-border p-3 text-sm">
+          Colore dell’agente
+          <input type="color" value={color} onChange={(event) => setColor(event.target.value)}
+            className="h-9 w-12 cursor-pointer rounded border border-nathion-border bg-nathion-bg p-1" />
+          <span className="font-mono text-xs text-nathion-muted">{color.toUpperCase()}</span>
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={memory === "read"} onChange={(e) => setMemory(e.target.checked ? "read" : "none")} />
           Consenti l’uso delle fonti e della memoria personale
